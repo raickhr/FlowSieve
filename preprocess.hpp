@@ -99,6 +99,7 @@ void Apply_LLC_Helmholtz_Projection(
         const bool weight_err,
         const bool use_mask,
         const double Tikhov_Laplace,
+        const double filter_scale = -1,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
 

@@ -702,6 +702,12 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
 
         vars_to_write.push_back("u_lon_pot");
         vars_to_write.push_back("u_lat_pot");
+
+        vars_to_write.push_back("vorticity");
+        vars_to_write.push_back("divergence");
+
+        vars_to_write.push_back("proj_vorticity");
+        vars_to_write.push_back("proj_divergence");
     }
 
     vars_to_write.push_back("Psi");
@@ -715,6 +721,15 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
 
         write_field_to_output(full_u_lon_pot,  "u_lon_pot",  starts, counts, output_fname.c_str(), &unmask);
         write_field_to_output(full_u_lat_pot,  "u_lat_pot",  starts, counts, output_fname.c_str(), &unmask);
+
+        write_field_to_output(vort_term,  "vorticity",  starts, counts, output_fname.c_str(), &unmask);
+        write_field_to_output(div_term,   "divergence", starts, counts, output_fname.c_str(), &unmask);
+
+        toroidal_vel_div(        div_term, full_u_lon_pot, full_u_lat_pot, source_data, use_mask ? mask : unmask );
+        toroidal_curl_u_dot_er( vort_term, full_u_lon_tor, full_u_lat_tor, source_data, use_mask ? mask : unmask );
+
+        write_field_to_output(vort_term,  "proj_vorticity",  starts, counts, output_fname.c_str(), &unmask);
+        write_field_to_output(div_term,   "proj_divergence", starts, counts, output_fname.c_str(), &unmask);
     }
 
     write_field_to_output(full_Psi, "Psi", starts, counts, output_fname.c_str(), &unmask);
