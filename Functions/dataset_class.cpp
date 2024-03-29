@@ -546,7 +546,6 @@ void dataset::load_adjacency(
         } 
     }
 
-    /* Also not used, so don't load
     // 2nd lon deriv weights
     read_var_from_file( tmp_var,
                         "adjacency_d2dlon2_weights", 
@@ -570,7 +569,6 @@ void dataset::load_adjacency(
             adjacency_d2dlat2_weights[II][JJ] = tmp_var.at(II*(Nneighbours+1) + JJ);
         } 
     }
-    */
 
 
 }
