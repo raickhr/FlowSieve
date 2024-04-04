@@ -154,6 +154,7 @@ namespace constants
      */
     enum GridType : int { LLC, MeshGrid };
     const int GRID_TYPE = GridType::LLC;
+    const size_t ADJACENCY_SIZE = 4; //8
 
     /*!
      * \param CARTESIAN

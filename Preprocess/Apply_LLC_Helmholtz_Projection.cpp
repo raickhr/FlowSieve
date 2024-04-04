@@ -466,7 +466,6 @@ void Apply_LLC_Helmholtz_Projection(
                 //          the broader stencil is helpful. It's also more internally
                 //          consistent since later we take derivs( vel ) = deriv( deriv ( Helm ) )
 
-                /*
                 for ( size_t D2_ind = 0; D2_ind < num_neighbours+1; D2_ind++ ) {
                     val  =   source_data.adjacency_ddlon_weights.at(Ipt).at(Ineighbour)
                            * source_data.adjacency_ddlon_weights.at(neighbour_ind).at(D2_ind);
@@ -481,8 +480,8 @@ void Apply_LLC_Helmholtz_Projection(
                     row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
                     alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
                 }
-                */
 
+                /*
                 // Version using actual second derivative
                 val  = source_data.adjacency_d2dlon2_weights.at(Ipt).at(Ineighbour);
                 val *= weight_val * pow(cos_lat_inv * R_inv, 2.);
@@ -495,12 +494,12 @@ void Apply_LLC_Helmholtz_Projection(
                 column_skip = 1 * Npts + neighbour_ind;
                 row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
                 alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
+                */
 
 
                 //
                 //// Second LAT derivative
                 //
-                /*
                 for ( size_t D2_ind = 0; D2_ind < num_neighbours+1; D2_ind++ ) {
                     val  =   source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour)
                            * source_data.adjacency_ddlat_weights.at(neighbour_ind).at(D2_ind);
@@ -515,8 +514,8 @@ void Apply_LLC_Helmholtz_Projection(
                     row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
                     alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
                 }
-                */
 
+                /*
                 // Version using actual second derivative
                 val  = source_data.adjacency_d2dlat2_weights.at(Ipt).at(Ineighbour);
                 val *= weight_val * pow(R_inv, 2.);
@@ -529,6 +528,7 @@ void Apply_LLC_Helmholtz_Projection(
                 column_skip = 1 * Npts + neighbour_ind;
                 row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
                 alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
+                */
 
                 //
                 //// LAT first derivative
