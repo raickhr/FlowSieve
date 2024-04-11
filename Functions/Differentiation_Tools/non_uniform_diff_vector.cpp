@@ -97,7 +97,48 @@ void non_uniform_diff_vector(
 
                 } else if (Iref == LB + 2) {
 
+                    double dn2 = grid.at(Iref-2) - grid.at(Iref);
+                    double dn1 = grid.at(Iref-1) - grid.at(Iref);
+                    double dp1 = grid.at(Iref+1) - grid.at(Iref);
+
+                    double An1 = 1/dn1 - 1/dn2;
+                    double Ap1 = 1/dp1 - 1/dn2;
+
+                    double Bn1 = pow(1/dn1,2) - pow(1/dn2,2);
+                    double Bp1 = pow(1/dp1,2) - pow(1/dn2,2);
+
+                    double Cn1 = pow(1/dn1,3) - pow(1/dn2,3);
+                    double Cp1 = pow(1/dp1,3) - pow(1/dn2,3);
+
+                    c1 = - ( (1/Bn1 - 1/Bp1) * pow(1/dn2,3) );
+                    c2 = ( 1 / (Bn1 * pow(dn1,3) ) );
+                    c3 = - ( (Cn1/Bn1) - (Cp1/Bp1) );
+                    c4 = - ( 1 / (Bp1 * pow(dp1,3) ) );
+
+                    scale_factor = ( (An1/Bn1) - (Ap1/Bp1) ) / 2;
+
+
                 } else if (Iref == UB) {
+
+                    double dn3 = grid.at(Iref-3) - grid.at(Iref);
+                    double dn2 = grid.at(Iref-2) - grid.at(Iref);
+                    double dn1 = grid.at(Iref-1) - grid.at(Iref);
+
+                    double An1 = 1/dn1 - 1/dn3;
+                    double An2 = 1/dn2 - 1/dn3;
+
+                    double Bn1 = pow(1/dn1,2) - pow(1/dn3,2);
+                    double Bn2 = pow(1/dn2,2) - pow(1/dn3,2);
+
+                    double Cn1 = pow(1/dn1,3) - pow(1/dn3,3);
+                    double Cn2 = pow(1/dn2,3) - pow(1/dn3,3);
+
+                    c1 = - ( (1/Bn2 - 1/Bn1) * pow(1/dn3,3) );
+                    c2 =   ( 1 / (Bn2 * pow(dn2,3) ) );
+                    c3 = - ( 1 / (Bn1 * pow(dn1,3) ) );
+                    c4 =  - ( (Cn2 / Bn2) - (Cn1 / Bn1)    );
+
+                    scale_factor = ( (An2/Bn2) - (An1/Bn1) ) / 2;
 
                 }
                 diff_array.insert(start, {c1, c2, c3, c4});
