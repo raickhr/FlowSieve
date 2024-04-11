@@ -3,6 +3,9 @@
 #include <vector>
 #include <omp.h>
 #include <mpi.h>
+#include <sstream>
+#include <iomanip>
+
 #include "../../functions.hpp"
 #include "../../netcdf_io.hpp"
 #include "../../constants.hpp"
@@ -57,7 +60,7 @@ void filtering(
                 Nlon    = source_data.Nlon;
     const unsigned int num_pts = Ntime * Ndepth * Nlat * Nlon;
 
-    char fname [50];
+    //char fname [50];
     
     const int ndims = 4;
     size_t starts[ndims] = { size_t(myStarts.at(0)), size_t(myStarts.at(1)), size_t(myStarts.at(2)), size_t(myStarts.at(3))};
@@ -355,7 +358,10 @@ void filtering(
     for (int Iscale = 0; Iscale < Nscales; Iscale++) {
 
         // Create the output file
-        snprintf(fname, 50, "filter_%.6gkm.nc", scales.at(Iscale)/1e3);
+        //snprintf(fname, 50, "filter_%.6gkm.nc", scales.at(Iscale)/1e3);
+        std::ostringstream name_stream;
+        name_stream << "filter_" << std::setprecision(6) << (scales.at(Iscale)/1e3) << "km.nc";
+        const std::string fname = name_stream.str();
         if (not(constants::NO_FULL_OUTPUTS)) {
             initialize_output_file( source_data, vars_to_write, fname, scales.at(Iscale));
 

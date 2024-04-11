@@ -33,7 +33,7 @@ void convert_coordinates(
         if (wRank == 0) { fprintf(stdout, "Converting grid coordinates (if appropriate).\n"); }
         #endif
 
-        #pragma omp parallel default(none) private(ii) shared(longitude, latitude)
+        #pragma omp parallel default(none) private(ii) shared(longitude, latitude) firstprivate( D2R )
         { 
             #pragma omp for collapse(1) schedule(static)
             for (ii = 0; ii < longitude.size(); ++ii) { longitude.at(ii) = longitude.at(ii) * D2R; }

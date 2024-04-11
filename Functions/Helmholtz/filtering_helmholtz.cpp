@@ -3,6 +3,9 @@
 #include <vector>
 #include <omp.h>
 #include <mpi.h>
+#include <sstream>
+#include <iomanip>
+
 #include "../../functions.hpp"
 #include "../../netcdf_io.hpp"
 #include "../../constants.hpp"
@@ -34,6 +37,8 @@ void filtering_helmholtz(
                 Nlat    = source_data.Nlat,
                 Nlon    = source_data.Nlon;
     const unsigned int num_pts = Ntime * Ndepth * Nlat * Nlon;
+
+    const double &rho0 = constants::rho0;
 
     const std::vector<double> zero_vector( num_pts, 0. );
 
@@ -73,7 +78,7 @@ void filtering_helmholtz(
     if (wRank == 0) { fprintf( stdout, "\nPreparing to apply %d filters to data with (MPI-local) sizes (%'d - %'d - %'d - %'d) \n", Nscales, Ntime, Ndepth, Nlat, Nlon ); }
     #endif
 
-    char fname [50];
+    //char fname [50];
     
     const int ndims = 4;
     size_t starts[ndims] = { size_t(myStarts.at(0)), size_t(myStarts.at(1)), size_t(myStarts.at(2)), size_t(myStarts.at(3)) };
@@ -721,7 +726,10 @@ void filtering_helmholtz(
         timing_records.reset();
 
         // Create the output file
-        snprintf(fname, 50, "filter_%.6gkm.nc", scales.at(Iscale)/1e3);
+        //snprintf(fname, 50, "filter_%.6gkm.nc", scales.at(Iscale)/1e3);
+        std::ostringstream name_stream;
+        name_stream << "filter_" << std::setprecision(6) << (scales.at(Iscale)/1e3) << "km.nc";
+        const std::string fname = name_stream.str();
         if (not(constants::NO_FULL_OUTPUTS)) {
             initialize_output_file( source_data, vars_to_write, fname, scales.at(Iscale));
 
@@ -775,7 +783,7 @@ void filtering_helmholtz(
                 dl_Psi_tmp, dll_Psi_tmp, dl_Phi_tmp, dll_Phi_tmp, dl_ur_tmp, dll_ur_tmp, \
                 wind_tau_Psi_tmp, wind_tau_Phi_tmp, tau_wind_dot_u_tor_tmp, tau_wind_dot_u_pot_tmp ) \
         firstprivate(perc, wRank, local_kernel, local_dl_kernel, local_dll_kernel, \
-                perc_count, Nlon, Nlat, Ndepth, Ntime )
+                perc_count, Nlon, Nlat, Ndepth, Ntime, rho0 )
         {
 
             filtered_vals.clear();
@@ -978,7 +986,7 @@ void filtering_helmholtz(
                             vort_uy_tor.at(index) = vort_uy_tmp;
                             vort_uz_tor.at(index) = vort_uz_tmp;
 
-                            KE_tor_filt.at(index) = 0.5 * constants::rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
+                            KE_tor_filt.at(index) = 0.5 * rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
 
                             // pot
                             apply_filter_at_point_for_quadratics(
@@ -997,7 +1005,7 @@ void filtering_helmholtz(
                             vort_uy_pot.at(index) = vort_uy_tmp;
                             vort_uz_pot.at(index) = vort_uz_tmp;
 
-                            KE_pot_filt.at(index) = 0.5 * constants::rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
+                            KE_pot_filt.at(index) = 0.5 * rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
 
                             // tot
                             apply_filter_at_point_for_quadratics(
@@ -1016,7 +1024,7 @@ void filtering_helmholtz(
                             vort_uy_tot.at(index) = vort_uy_tmp;
                             vort_uz_tot.at(index) = vort_uz_tmp;
 
-                            KE_tot_filt.at(index) = 0.5 * constants::rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
+                            KE_tot_filt.at(index) = 0.5 * rho0 * (uxux_tmp + uyuy_tmp + uzuz_tmp);
 
                             if ( (constants::DO_TIMING) and (thread_id == 0) ) { 
                                 timing_records.add_to_record(MPI_Wtime() - clock_on, "filter_at_point_for_quadratics"); 
@@ -1355,14 +1363,15 @@ void filtering_helmholtz(
                 Enst_tor, Enst_pot, Enst_tot, mask, \
                 u_lon_tor, u_lat_tor, u_lon_pot, u_lat_pot, u_lon_tot, u_lat_tot, \
                 vort_tor_r, vort_pot_r, vort_tot_r ) \
-        private( index )
+        private( index ) \
+        firstprivate( rho0 )
         {
             #pragma omp for collapse(1) schedule(guided)
             for (index = 0; index < u_lon_tor.size(); ++index) {
                 if ( mask.at(index) ) { 
-                    KE_tor_coarse.at(index) = 0.5 * constants::rho0 * ( pow(u_lon_tor.at(index), 2.) + pow(u_lat_tor.at(index), 2.) );
-                    KE_pot_coarse.at(index) = 0.5 * constants::rho0 * ( pow(u_lon_pot.at(index), 2.) + pow(u_lat_pot.at(index), 2.) );
-                    KE_tot_coarse.at(index) = 0.5 * constants::rho0 * ( pow(u_lon_tot.at(index), 2.) + pow(u_lat_tot.at(index), 2.) );
+                    KE_tor_coarse.at(index) = 0.5 * rho0 * ( pow(u_lon_tor.at(index), 2.) + pow(u_lat_tor.at(index), 2.) );
+                    KE_pot_coarse.at(index) = 0.5 * rho0 * ( pow(u_lon_pot.at(index), 2.) + pow(u_lat_pot.at(index), 2.) );
+                    KE_tot_coarse.at(index) = 0.5 * rho0 * ( pow(u_lon_tot.at(index), 2.) + pow(u_lat_tot.at(index), 2.) );
 
                     KE_tor_fine.at(index) = KE_tor_filt.at(index) - KE_tor_coarse.at(index);
                     KE_pot_fine.at(index) = KE_pot_filt.at(index) - KE_pot_coarse.at(index);
@@ -1372,9 +1381,9 @@ void filtering_helmholtz(
                     KE_pot_fine_mod.at(index) = KE_pot_orig.at(index) - KE_pot_coarse.at(index);
                     KE_tot_fine_mod.at(index) = KE_tot_orig.at(index) - KE_tot_coarse.at(index);
 
-                    Enst_tor.at(index) = 0.5 * constants::rho0 * ( pow(vort_tor_r.at(index), 2.) );
-                    Enst_pot.at(index) = 0.5 * constants::rho0 * ( pow(vort_pot_r.at(index), 2.) );
-                    Enst_tot.at(index) = 0.5 * constants::rho0 * ( pow(vort_tot_r.at(index), 2.) );
+                    Enst_tor.at(index) = 0.5 * rho0 * ( pow(vort_tor_r.at(index), 2.) );
+                    Enst_pot.at(index) = 0.5 * rho0 * ( pow(vort_pot_r.at(index), 2.) );
+                    Enst_tot.at(index) = 0.5 * rho0 * ( pow(vort_tot_r.at(index), 2.) );
                 }
             }
         }
@@ -1518,3 +1527,5 @@ void filtering_helmholtz(
 
     }  // end for(scale) block
 } // end filtering
+
+

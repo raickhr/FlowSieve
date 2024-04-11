@@ -79,7 +79,7 @@ void particles_evolve_trajectories(
             test_val, lon_rng, lat_rng, lon_mid, lat_mid, \
             num_times_recycled, do_recycle, \
             left, right, bottom, top) \
-    firstprivate( Nparts, Nouts, Ntime, dlon, dlat, dt_target, particle_lifespan )
+    firstprivate( Nparts, Nouts, Ntime, dlon, dlat, dt_target, particle_lifespan, cfl, U0 )
     {
         #pragma omp for collapse(1) schedule(dynamic)
         for (Ip = 0; Ip < Nparts; ++Ip) {

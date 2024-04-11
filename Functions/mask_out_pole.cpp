@@ -43,7 +43,7 @@ void mask_out_pole(
         #pragma omp parallel default(none) \
             private(Itime, Idepth, Ilat, Ilon, index) \
             shared(latitude, mask, masked_latitudes) \
-            firstprivate( Nlon, Nlat, Ntime, Ndepth )
+            firstprivate( Nlon, Nlat, Ntime, Ndepth, pole_cut )
         { 
             #pragma omp for collapse(1) schedule(static)
             for (index = 0; index < mask.size(); ++index) {
