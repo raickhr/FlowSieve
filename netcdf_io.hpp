@@ -79,7 +79,8 @@ bool check_file_existence (
 void initialize_output_file(
         const dataset & source_data,
         const std::vector<std::string> & vars,
-        const char * filename,
+        const std::string filename,
+        //const char * filename,
         const double filter_scale = -1,
         MPI_Comm = MPI_COMM_WORLD
         );
@@ -90,7 +91,8 @@ void initialize_subset_file(
         const std::vector<double> & windows,
         const int & Nsamples,
         const std::vector<std::string> & vars,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const double filter_scale,
         MPI_Comm = MPI_COMM_WORLD
         );
@@ -122,7 +124,8 @@ void initialize_postprocess_file(
         const dataset & source_data,
         const std::vector<double> & OkuboWeiss_dim_vals,
         const std::vector<std::string> & int_vars,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const double & filter_scale,
         const bool include_OkuboWeiss,
         const MPI_Comm comm = MPI_COMM_WORLD
@@ -145,7 +148,8 @@ void initialize_postprocess_file(
 void initialize_regions_file(
         const std::vector<double> & latitude,
         const std::vector<double> & longitude,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
 
@@ -202,7 +206,8 @@ void write_integral_to_post(
         std::string field_suffix,
         size_t * start,
         size_t * count,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const int region_dim,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
@@ -210,18 +215,20 @@ void write_integral_to_post(
 
 void write_time_average_to_post(
         const std::vector< double > & field,
-        std::string field_name,
-        std::string field_suffix,
+        const std::string & field_name,
+        const std::string & field_suffix,
         size_t * start,
         size_t * count,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const std::vector<bool> * mask,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
 
 
 void write_regions_to_post(
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const std::vector< std::string > & region_names,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
@@ -266,9 +273,12 @@ void read_mask_from_file(
  */
 void read_attr_from_file(
         double &attr,
-        const char * attr_name,
-        const std::string filename,
-        const char * var_name = NULL,
+        //const char * attr_name,
+        //const std::string filename,
+        //const char * var_name = NULL,
+        const std::string & attr_name,
+        const std::string & filename,
+        const std::string & var_name = "",
         const MPI_Comm comm = MPI_COMM_WORLD 
         );
 
@@ -288,7 +298,8 @@ void add_var_to_file(
         const std::string var_name,
         const char ** dim_list,
         const int num_dims,
-        const char * filename
+        const std::string filename
+        //const char * filename
         );
 
 
@@ -304,9 +315,11 @@ void add_var_to_file(
  *
  */
 void add_attr_to_file(
-        const char * varname,
+        const std::string varname,
+        //const char * varname,
         const double value,
-        const char * filename,
+        const std::string filename,
+        //const char * filename,
         const MPI_Comm comm = MPI_COMM_WORLD
         );
 

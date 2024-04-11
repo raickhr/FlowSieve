@@ -32,10 +32,11 @@ void write_field_to_output(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_WRITE | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename.c_str());
-    MPI_Barrier(comm);
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename.c_str());
+    //MPI_Barrier(comm);
+    //retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Get the variable ID for the field

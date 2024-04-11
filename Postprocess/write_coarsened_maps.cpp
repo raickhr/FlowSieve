@@ -11,7 +11,8 @@
 void write_coarsened_maps(
         const std::vector< std::vector< double > > & coarsened_maps,
         const std::vector<std::string> & vars_to_process,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const int Stime,
         const int Sdepth,
         const int Ntime,

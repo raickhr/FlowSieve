@@ -3,6 +3,8 @@
 #include <omp.h>
 #include <vector>
 #include <cassert>
+#include <sstream>
+#include <iomanip>
 
 #include "../constants.hpp"
 #include "../functions.hpp"
@@ -99,12 +101,20 @@ void Apply_Postprocess_Routines(
     }
 
     // Filename + file
-    char filename[50];
+    //char filename[50];
+    //if (filter_scale >= 0) {
+    //    snprintf(filename, 50, (filename_base + "_%.6gkm.nc").c_str(), filter_scale/1e3);
+    //} else {
+    //    snprintf(filename, 50, (filename_base + ".nc").c_str());
+    //}
+    std::ostringstream name_stream;
     if (filter_scale >= 0) {
-        snprintf(filename, 50, (filename_base + "_%.6gkm.nc").c_str(), filter_scale/1e3);
+        //name_stream << filename_base << std::fixed << std::setprecision(6) << (filter_scale / 1e3) << ".nc";
+        name_stream << filename_base << "_" << std::setprecision(6) << (filter_scale / 1e3) << "km.nc";
     } else {
-        snprintf(filename, 50, (filename_base + ".nc").c_str());
+        name_stream << filename_base << ".nc";
     }
+    std::string filename = name_stream.str();
     initialize_postprocess_file(
             source_data, OkuboWeiss_dim_vals, vars_to_process,
             filename, filter_scale, do_OkuboWeiss

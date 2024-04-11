@@ -97,8 +97,7 @@ void compute_region_avg_and_std_OkuboWeiss(
 
     #pragma omp parallel default(none) \
     private( int_index ) \
-    shared( OkuboWeiss_areas, area_sums ) \
-    firstprivate( Ifield )
+    shared( OkuboWeiss_areas, area_sums )
     {
         #pragma omp for collapse(1) schedule(static)
         for (int_index = 0; int_index < area_sums.size(); int_index++) {

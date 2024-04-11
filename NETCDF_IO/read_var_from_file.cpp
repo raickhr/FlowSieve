@@ -229,7 +229,9 @@ void read_var_from_file(
     // Determine masking, if desired
     double fill_val = 1e100;  // backup value
     double var_max = -1e10, var_min = 1e10;
-    size_t num_land = 0, num_water = 0, num_unmasked = 0;
+    #if DEBUG >= 1
+    size_t num_land = 0, num_water = 0, num_unmasked = 0, num_zeros = 0;
+    #endif
 
     if (mask != NULL) { mask->resize(var.size()); }
 
@@ -258,30 +260,37 @@ void read_var_from_file(
     #endif
 
     // Masked if equal to fill value
-    size_t num_zeros = 0;
     for (size_t II = 0; II < var.size(); II++) {
         if ( var.at(II) == fill_val ) {
             if (constants::FILTER_OVER_LAND) {
                 // If requested to filter over land, then fill in the mask now
                 if (mask != NULL) { mask->at(II) = true; }
+                #if DEBUG >= 1
                 num_unmasked++;
+                #endif
                 var.at(II) = land_fill_value;
             } else {
                 if (mask != NULL) { mask->at(II) = false; }
+                #if DEBUG >= 1
                 num_land++;
+                #endif
             }
         } else {
             var_max = std::max( var_max, var.at(II) );
             var_min = std::min( var_min, var.at(II) );
             if (mask != NULL) { mask->at(II) = true; }
+            #if DEBUG >= 1
             num_water++;
+            #endif
 
             // Apply scale factor and offset to non-masked values
             if (scale  != 1.) { var.at(II) = var.at(II) * scale; }
             if (offset != 0.) { var.at(II) = var.at(II) + offset; }
         }
 
+        #if DEBUG >= 1
         if (var.at(II) == 0) { num_zeros++; }
+        #endif
     }
 
     var_max = var_max * scale + offset;
@@ -292,11 +301,6 @@ void read_var_from_file(
         fprintf(stdout, "  Land cover = %'.4g%% (%'zu water vs %'zu land) (%'zu land converted to water) \n", 
                 100 * ((double)num_land) / (num_land + num_water + num_unmasked),
                 num_water + num_unmasked, num_land, num_unmasked);
-    }
-    #endif
-
-    #if DEBUG >= 1
-    if (wRank == 0) { 
         fprintf(stdout, "  var_max = %g\n", var_max);
         fprintf(stdout, "  var_min = %g\n", var_min);
         fprintf(stdout, "  num zeros = %zu\n", num_zeros);

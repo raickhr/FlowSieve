@@ -8,9 +8,11 @@
 // Write to netcdf file
 void read_attr_from_file(
         double &attr,
-        const char * attr_name,
-        const std::string filename,
-        const char * var_name,
+        //const char * attr_name,
+        const std::string & attr_name,
+        const std::string & filename,
+        //const char * var_name,
+        const std::string & var_name,
         const MPI_Comm comm
         ) {
 
@@ -30,15 +32,17 @@ void read_attr_from_file(
     //int FLAG = NC_NETCDF4 | NC_NOWRITE | NC_MPIIO;
     int FLAG = NC_NETCDF4 | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename.c_str());
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename.c_str());
+    //retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Get information about the variable
     int var_id = NC_GLOBAL, num_dims;
     int dim_ids[NC_MAX_VAR_DIMS];
-    if (var_name == NULL) {
+    //if (var_name == NULL) {
+    if ( var_name.empty() ) {
         // If no var_name given, then assume a global attribute
         var_id = NC_GLOBAL;
     } else {
@@ -47,11 +51,11 @@ void read_attr_from_file(
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
     }
 
-    char attrname [50];
-    snprintf(attrname, 50, attr_name);
+    //char attrname [50];
+    //snprintf(attrname, 50, attr_name);
 
     nc_type att_type;
-    nc_inq_atttype(ncid, var_id, attrname, &att_type);
+    nc_inq_atttype(ncid, var_id, attr_name.c_str(), &att_type);
     #if DEBUG >= 1
     if (wRank == 0) {
         switch (att_type) {
@@ -80,21 +84,29 @@ void read_attr_from_file(
     float att_val_float;
     double att_val_double;
     switch (att_type) {
-        case NC_SHORT   : nc_get_att(ncid, var_id, attrname, &att_val_short);   attr = double(att_val_short);   break;
-        case NC_USHORT  : nc_get_att(ncid, var_id, attrname, &att_val_ushort);  attr = double(att_val_ushort);  break;
-        case NC_INT     : nc_get_att(ncid, var_id, attrname, &att_val_int);     attr = double(att_val_int);     break;
-        case NC_UINT    : nc_get_att(ncid, var_id, attrname, &att_val_uint);    attr = double(att_val_uint);    break;
-        case NC_INT64   : nc_get_att(ncid, var_id, attrname, &att_val_long);    attr = double(att_val_long);    break;
-        case NC_UINT64  : nc_get_att(ncid, var_id, attrname, &att_val_ulong);   attr = double(att_val_ulong);   break;
-        case NC_FLOAT   : nc_get_att(ncid, var_id, attrname, &att_val_float);   attr = double(att_val_float);   break;
-        case NC_DOUBLE  : nc_get_att(ncid, var_id, attrname, &att_val_double);  attr = double(att_val_double);  break;
+        case NC_SHORT   : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_short);   
+                          attr = double(att_val_short);   break;
+        case NC_USHORT  : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_ushort);  
+                          attr = double(att_val_ushort);  break;
+        case NC_INT     : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_int);     
+                          attr = double(att_val_int);     break;
+        case NC_UINT    : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_uint);    
+                          attr = double(att_val_uint);    break;
+        case NC_INT64   : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_long);    
+                          attr = double(att_val_long);    break;
+        case NC_UINT64  : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_ulong);   
+                          attr = double(att_val_ulong);   break;
+        case NC_FLOAT   : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_float);   
+                          attr = double(att_val_float);   break;
+        case NC_DOUBLE  : nc_get_att(ncid, var_id, attr_name.c_str(), &att_val_double);  
+                          attr = double(att_val_double);  break;
     }
 
     //nc_get_att(ncid, var_id, attrname, &attr);
 
     #if DEBUG >= 1
     if (wRank == 0) {
-        fprintf(stdout, "    %s = %g\n", attr_name, attr);
+        fprintf(stdout, "    %s = %g\n", attr_name.c_str(), attr);
     }
     #endif
 

@@ -7,11 +7,12 @@
 
 void write_time_average_to_post(
         const std::vector< double > & field,
-        std::string field_name,
-        std::string field_suffix,
+        const std::string & field_name,
+        const std::string & field_suffix,
         size_t * start,
         size_t * count,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const std::vector<bool> * mask,
         const MPI_Comm comm
         ) {
@@ -23,11 +24,12 @@ void write_time_average_to_post(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_WRITE | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
 
-    MPI_Barrier(comm);
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //MPI_Barrier(comm);
+    //retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Get the variable ID for the field
@@ -140,7 +142,7 @@ void write_time_average_to_post(
 
     #if DEBUG >= 1
     if (wRank == 0) { fprintf(stdout, "  - wrote %s to %s -\n", 
-            (field_name + field_suffix).c_str(), filename); }
+            (field_name + field_suffix).c_str(), filename.c_str()); }
     #endif
 }
 

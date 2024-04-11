@@ -10,7 +10,8 @@ void initialize_postprocess_file(
         const dataset & source_data,
         const std::vector<double> & OkuboWeiss_dim_vals,
         const std::vector<std::string> & int_vars,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const double & filter_scale,
         const bool include_OkuboWeiss,
         const MPI_Comm comm
@@ -30,9 +31,10 @@ void initialize_postprocess_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     retval = nc_put_att_double(ncid, NC_GLOBAL, "filter_scale", NC_DOUBLE, 1, &filter_scale);
@@ -181,7 +183,7 @@ void initialize_postprocess_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", buffer); }
+    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", filename.c_str() ); }
     #endif
 
     if (wRank == 0) {
@@ -192,8 +194,8 @@ void initialize_postprocess_file(
         const char* dim_names[] = {"time", "depth", "region"};
         const int ndims = 3;
         for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-            add_var_to_file( int_vars.at(varInd)+"_area_average", dim_names, ndims, buffer);
-            add_var_to_file(int_vars.at(varInd)+"_area_std_dev", dim_names, ndims, buffer);
+            add_var_to_file( int_vars.at(varInd)+"_area_average", dim_names, ndims, filename );
+            add_var_to_file(int_vars.at(varInd)+"_area_std_dev", dim_names, ndims, filename );
         }
 
         // time averages
@@ -201,8 +203,8 @@ void initialize_postprocess_file(
             const char* dim_names_time_ave[] = {"depth", "latitude", "longitude"};
             const int ndims_time_ave = 3;
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_time_average", dim_names_time_ave, ndims_time_ave, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_time_std_dev", dim_names_time_ave, ndims_time_ave, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_time_average", dim_names_time_ave, ndims_time_ave, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_time_std_dev", dim_names_time_ave, ndims_time_ave, filename );
             }
         }
 
@@ -213,7 +215,7 @@ void initialize_postprocess_file(
             const int ndims_coarse_map = 4;
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
                 add_var_to_file( int_vars.at(varInd)+"_coarsened_map", 
-                        dim_names_coarse_map, ndims_coarse_map, buffer);
+                        dim_names_coarse_map, ndims_coarse_map, filename );
             }
         }
 
@@ -222,9 +224,9 @@ void initialize_postprocess_file(
             const char* dim_names_time_ave[] = {"time", "depth", "latitude"};
             const int ndims_time_ave = 3;
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_zonal_average", dim_names_time_ave, ndims_time_ave, buffer);
-                add_var_to_file( int_vars.at(varInd)+"_zonal_median", dim_names_time_ave, ndims_time_ave, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_zonal_std_dev", dim_names_time_ave, ndims_time_ave, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_zonal_average", dim_names_time_ave, ndims_time_ave, filename );
+                add_var_to_file( int_vars.at(varInd)+"_zonal_median", dim_names_time_ave, ndims_time_ave, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_zonal_std_dev", dim_names_time_ave, ndims_time_ave, filename );
             }
         }
 
@@ -232,10 +234,10 @@ void initialize_postprocess_file(
         if (include_OkuboWeiss) {
             const char* dim_names[] = {"time", "depth", "OkuboWeiss", "region"};
             const int ndims = 4;
-            add_var_to_file( "area_OkuboWeiss", dim_names, ndims, buffer);
+            add_var_to_file( "area_OkuboWeiss", dim_names, ndims, filename );
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_OkuboWeiss_average", dim_names, ndims, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_OkuboWeiss_std_dev", dim_names, ndims, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_OkuboWeiss_average", dim_names, ndims, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_OkuboWeiss_std_dev", dim_names, ndims, filename );
             }
         }
     }
