@@ -10,7 +10,7 @@ CXX    ?= g++
 MPICXX ?= mpicxx
 
 # Linking flags for netcdf
-LINKS:=-lnetcdf -lhdf5_hl -lhdf5 -lm -ldl -lz -fopenmp -lm
+LINKS:=-lnetcdf -lnetcdf_c++4 -lhdf5_hl -lhdf5 -lm -ldl -lz -fopenmp -lm
 
 # Default compiler flags
 CFLAGS:=-Wall -std=c++14
@@ -31,10 +31,11 @@ ALGLIB_OPT_FLAGS:=-O3
 # Link in netcdf
 GCC_LIBS=-L${TACC_GCC_LIB}
 GCC_INCS=-I${TACC_GCC_INC}
-NETCDF_LIBS=-L${TACC_PNETCDF_LIB}
-NETCDF_INCS=-I${TACC_PNETCDF_INC}
-HDF_LIBS=-L${TACC_PHDF5_LIB}
-HDF_INCS=-I${TACC_PHDF5_INC}
+NETCDF_LIBS=-L${TACC_NETCDF_LIB}
+NETCDF_INCS=-I${TACC_NETCDF_INC}
+
+HDF_LIBS=-L${TACC_HDF5_LIB}
+HDF_INCS=-I${TACC_HDF5_INC}
 
 LIB_DIRS:=${NETCDF_LIBS} ${HDF_LIBS} ${GCC_LIBS}
 INC_DIRS:=${NETCDF_INCS} ${HDF_INCS} ${GCC_INCS}
