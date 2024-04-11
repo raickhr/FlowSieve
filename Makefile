@@ -10,7 +10,7 @@ CFLAGS:=-DDEBUG=0 $(CFLAGS)
 # Turn on/off debug flags or additional optimization flags
 OPT:=true
 DEBUG:=false
-EXTRA_OPT:=true
+EXTRA_OPT:=false
 USE_GPROF:=false
 
 ##
@@ -131,7 +131,7 @@ ALGLIB_CPPS := $(wildcard  ALGLIB/*.cpp)
 ALGLIB_OBJS := $(addprefix ALGLIB/,$(notdir $(ALGLIB_CPPS:.cpp=.o)))
 
 ALGLIB/%.o: ALGLIB/%.cpp
-	$(CXX) -I ./ALGLIB -c $(ALGLIB_OPT_FLAGS) -o $@ $<
+	$(MPICXX) $(LDFLAGS) -c $(CFLAGS) -I ./ALGLIB -c $(ALGLIB_OPT_FLAGS) -o $@ $<
 
 
 # Get the list of preprocessing  cpp files
@@ -147,7 +147,7 @@ TEST_CPPS := $(wildcard Tests/*.cpp)
 TEST_EXES := $(addprefix Tests/,$(notdir $(TEST_CPPS:.cpp=.x)))
 
 
-.PHONY: clean hardclean docs cleandocs tests all ALGLIB
+.PHONY: clean hardclean docs cleandocs tests all ALGLIB NETCDF_IO POSTPROCESS
 clean:
 	rm -f *.o 
 	rm -f NETCDF_IO/*.o 
@@ -187,6 +187,9 @@ tests: ${TEST_EXES}
 
 ALGLIB: ${ALGLIB_OBJS}
 
+NETCDF_IO: ${NETCDF_IO_OBJS}
+
+POSTPROCESS: ${POSTPROCESS_OBJS}
 
 # 
 # Commands for building executables (and related object files)
