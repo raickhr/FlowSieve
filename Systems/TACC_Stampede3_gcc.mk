@@ -3,7 +3,7 @@
 ##	using GCC compilers
 ##
 # The modules used for this system file were:
-# module load gcc/13.2.0 impi/21.11 pnetcdf/4.9.2 phdf5/1.14.3
+# module load gcc/13.2.0 impi/21.11 parallel-netcdf/4.9.2 phdf5/1.14.3
 
 # Specify compilers
 CXX    ?= g++
