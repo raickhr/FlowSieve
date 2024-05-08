@@ -232,7 +232,9 @@ int main(int argc, char *argv[]) {
     }
 
     // Apply to projection routine
-    Apply_LLC_Helmholtz_Projection( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
+    //Apply_LLC_Helmholtz_Projection( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
+    //        tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace, filter_scale );
+    Apply_LLC_Helmholtz_Projection_AMGCL( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
             tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace, filter_scale );
     //Apply_LLC_Helmholtz_Projection_Eigen( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
     //        tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace );
