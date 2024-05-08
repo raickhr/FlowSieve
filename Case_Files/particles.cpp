@@ -77,7 +77,6 @@ int main(int argc, char *argv[]) {
     print_header_info();
 
     std::vector<double> longitude, latitude, time, depth;
-    std::vector<double> u_lon, u_lat;
     std::vector<bool> mask;
     size_t II;
 
@@ -105,18 +104,28 @@ int main(int argc, char *argv[]) {
     }
     for ( II = 0; II < time.size(); ++II ) { time[II] = time[II] * time_scale_factor; }
 
-    // Read in the velocity fields
-    //  WITHOUT splitting time/depth over MPI ranks. Each rank needs full data.
-    read_var_from_file(u_lon, zonal_vel_name, input_fname, &mask, NULL, NULL, 1, 1, false);
-    read_var_from_file(u_lat, merid_vel_name, input_fname, &mask, NULL, NULL, 1, 1, false);
-
-    // 
+    //  Verify final times make sense
     const int Ntime = time.size();
     if ( (final_time_input * time_scale_factor <= time.front()) and (Ntime == 1) ) {
         assert(false);  // Since only one time point is given, need a final particle time specified
                         // that is larger than the initial time
     } else if ( ( final_time_input > 0 ) and (Ntime > 1) and ( final_time_input * time_scale_factor > time.back() ) ) {
         assert(false); // Final time specified goes beyond provided data time
+    }
+
+    // Read in the velocity fields
+    //  only load in two time-instances at a time to save on memory
+    //  we'll simply roll through time and read in each new time as we need it
+    // If Ntime == 1, then we're doing streamlines, so just load in the first time twice
+    std::vector<double> u_lon_0, u_lon_1, u_lat_0, u_lat_1;
+    read_var_from_file_at_time( u_lon_0, 0, zonal_vel_name, input_fname, &mask );
+    read_var_from_file_at_time( u_lat_0, 0, merid_vel_name, input_fname, &mask );
+    if (Ntime == 1) {
+        u_lon_1 = u_lon_0;
+        u_lat_1 = u_lat_0;
+    } else {
+        read_var_from_file_at_time( u_lon_1, 1, zonal_vel_name, input_fname, &mask );
+        read_var_from_file_at_time( u_lat_1, 1, merid_vel_name, input_fname, &mask );
     }
 
     // Set the output times
@@ -145,29 +154,25 @@ int main(int argc, char *argv[]) {
     std::vector<const std::vector<double>*> fields_to_track;
     std::vector<std::string> names_of_tracked_fields;
 
+    // Tracked fields is currently broken. Need to figure out how
+    //  to make it work with the leap-frog loading system
+    /*
     names_of_tracked_fields.push_back( "vel_lon");
     fields_to_track.push_back(&u_lon);
 
     names_of_tracked_fields.push_back( "vel_lat");
     fields_to_track.push_back(&u_lat);
+    */
 
     // Storage for tracked fields
-    std::vector< std::vector< double > >     field_trajectories(fields_to_track.size()),
-                                         rev_field_trajectories(fields_to_track.size());
+    std::vector< std::vector< double > > field_trajectories(fields_to_track.size());
 
     for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
-            field_trajectories.at(Ifield).resize(Npts * Nouts, constants::fill_value);
-        rev_field_trajectories.at(Ifield).resize(Npts * Nouts, constants::fill_value);
+        field_trajectories.at(Ifield).resize(Npts * Nouts, constants::fill_value);
     }
 
-    // Initialize particle output file
-    initialize_particle_file(target_times, trajectories, names_of_tracked_fields, output_fname);
-
-    std::vector<double>     part_lon_hist(Npts * Nouts, constants::fill_value), 
-                            part_lat_hist(Npts * Nouts, constants::fill_value),
-                        rev_part_lon_hist(Npts * Nouts, constants::fill_value),
-                        rev_part_lat_hist(Npts * Nouts, constants::fill_value),
-                        trajectory_dists( Npts * Nouts, constants::fill_value);
+    std::vector<double> part_lon_hist(Npts * Nouts, constants::fill_value), 
+                        part_lat_hist(Npts * Nouts, constants::fill_value);
 
     #if DEBUG >= 2
     fprintf(stdout, "Setting particle initial positions.\n");
@@ -177,26 +182,18 @@ int main(int argc, char *argv[]) {
         part_lat_hist.at(II) = starting_lat.at(II);
     }
 
-    size_t starts[2], counts[2];
-    starts[0] = 0;
-    counts[0] = Nouts;
-
-    starts[1] = wRank * Npts;
-    counts[1] = Npts;
-
     #if DEBUG >= 2
     fprintf(stdout, "Beginning evolution routine.\n");
     #endif
     // Now do the particle routine
     particles_evolve_trajectories(
-            part_lon_hist,     part_lat_hist,
-        rev_part_lon_hist, rev_part_lat_hist,
-            field_trajectories,
-        rev_field_trajectories,
+        part_lon_hist,     part_lat_hist,
+        field_trajectories,
         starting_lat,  starting_lon,
         target_times,
         particle_lifespan,
-        u_lon, u_lat,
+        u_lon_0, u_lon_1, u_lat_0, u_lat_1,
+        zonal_vel_name, merid_vel_name, input_fname,
         fields_to_track, names_of_tracked_fields,
         time, latitude, longitude,        
         mask);
@@ -204,31 +201,38 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "\nProcessor %d of %d finished stepping particles.\n", wRank+1, wSize);
 
     std::vector<bool> out_mask(part_lon_hist.size());
-    for (II = 0; II < out_mask.size(); ++II) {
-        out_mask.at(II) = part_lon_hist.at(II) == constants::fill_value ? false : true;
+    #pragma omp parallel \
+    default (none) shared(out_mask, part_lon_hist) private(II) 
+    {
+        #pragma omp for collapse(1) schedule(static)
+        for (II = 0; II < out_mask.size(); ++II) {
+            out_mask.at(II) = (part_lon_hist.at(II) == constants::fill_value) ? false : true;
+        }
     }
+
+
+    // Initialize particle output file
+    initialize_particle_file(target_times, trajectories, names_of_tracked_fields, output_fname);
+
+    size_t starts[2], counts[2];
+    starts[0] = 0;
+    counts[0] = Nouts;
+
+    starts[1] = wRank * Npts;
+    counts[1] = Npts;
 
     MPI_Barrier(MPI_COMM_WORLD);
     write_field_to_output(part_lon_hist, "longitude", starts, counts, output_fname, &out_mask);
     write_field_to_output(part_lat_hist, "latitude",  starts, counts, output_fname, &out_mask);
 
-    #if DEBUG >= 1
-    write_field_to_output(rev_part_lon_hist, "rev_longitude", starts, counts, output_fname, &out_mask);
-    write_field_to_output(rev_part_lat_hist, "rev_latitude",  starts, counts, output_fname, &out_mask);
-
-    particles_fore_back_difference(trajectory_dists,     part_lon_hist,     part_lat_hist, 
-                                                     rev_part_lon_hist, rev_part_lat_hist);
-
-    write_field_to_output(trajectory_dists, "fore_back_dists", starts, counts, output_fname, &out_mask);
-    #endif
-
-
+    /*
     for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
         MPI_Barrier(MPI_COMM_WORLD);
         write_field_to_output(field_trajectories.at(Ifield), 
                 names_of_tracked_fields.at(Ifield),  
                 starts, counts, output_fname, &out_mask);
     }
+    */
 
     MPI_Finalize();
     return 0;
