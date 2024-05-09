@@ -1,3 +1,4 @@
+#include <cassert>
 #include <math.h>
 #include <algorithm>
 #include <vector>
@@ -93,6 +94,7 @@ void RKF45_update(
         const double y0,
         const double dt_seed,
         const double dt_max,
+        const double dt_min,
         const std::vector<double> & u_lon_0,
         const std::vector<double> & u_lon_1,
         const std::vector<double> & u_lat_0,
@@ -122,12 +124,14 @@ void RKF45_update(
               v0, v1, v2, v3, v4, v5, 
                   x1, x2, x3, x4, x5, x_final, 
                   y1, y2, y3, y4, y5, y_final;
-    double dt = dt_seed;
+    double dt = dt_seed, dt_tmp = dt_seed;
 
-    const double eps = 1e-6; // in m/s
+    const double eps = 1e-3; // in m/s
     double TE = 10 * eps;
 
     while ( TE > eps ) {
+
+        dt = dt_tmp;
     
         // First increment
         t = t0 + A0 * dt;
@@ -171,7 +175,6 @@ void RKF45_update(
         // Net displacement vector
         double  u_final = CH0 * u0 + CH1 * u1 + CH2 * u2 + CH3 * u3 + CH4 * u4 * CH5 * u5,
                 v_final = CH0 * v0 + CH1 * v1 + CH2 * v2 + CH3 * v3 + CH4 * v4 * CH5 * v5;
-        double x_final, y_final;
         move_on_sphere( x_final, y_final, x0, y0, u_final, v_final );
 
         // Estimate the truncation error
@@ -181,13 +184,16 @@ void RKF45_update(
 
         // If the error was too large, then we'll need to redo the step with a smaller dt.
         // If the error was smaller than our tolerance, than the step is adaptively increased
-        dt = std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max );
+        dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+
+        if (dt_tmp <= dt_min) { break; } // if we're at the smallest dt, just stop
     }
 
     // After success, store the desired values
     dt_new = dt;
     x_new = x_final;
     y_new = y_final;
+    //assert(false);
 }
 
 void particles_evolve_trajectories(
@@ -219,7 +225,7 @@ void particles_evolve_trajectories(
     MPI_Comm_size( comm, &wSize );
 
     double t_part, lon0, lat0, lon_new, lat_new,
-           dx_loc, dy_loc, dt, dt_max, dt_new,
+           dx_loc, dy_loc, dt, dt_max, dt_min, dt_new,
            up_0, up_1, vp_0, vp_1,
            vel_lon_part, vel_lat_part, field_val,
            test_val, lon_rng, lat_rng, lon_mid, lat_mid,
@@ -242,8 +248,10 @@ void particles_evolve_trajectories(
     int left, right, bottom, top;
     bool do_recycle;
 
+    std::vector<double> lon_tmps = starting_lon, 
+                        lat_tmps = starting_lat;
 
-    unsigned int out_ind, prev_out_ind, step_iter, Ip;
+    unsigned int out_ind=0, prev_out_ind, step_iter, Ip;
     size_t index, next_load_index = 1;
 
     // Step through time 'blocks' i.e. get to the time of the next velocity data
@@ -266,17 +274,17 @@ void particles_evolve_trajectories(
         default(none) \
         shared( lat, lon, vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1, mask,\
                 target_times, time, part_lon_hist, part_lat_hist,\
-                field_trajectories, fields_to_track,\
-                wRank, wSize)\
+                field_trajectories, fields_to_track, lon_tmps, lat_tmps,\
+                wRank, wSize, stdout)\
         private(Ip, index, t_part, step_iter, lon0, lat0, \
-                dt_max, dt_new, lon_new, lat_new, \
-                up_0, up_1, vp_0, vp_1, data_load_time, \
+                dt_max, dt_min, dt_new, lon_new, lat_new, \
+                up_0, up_1, vp_0, vp_1, \
                 dx_loc, dy_loc, dt, time_p, vel_lon_part, vel_lat_part, field_val,\
                 do_recycle, next_recycle_time, time_block_0, time_block_1, \
                 left, right, bottom, top) \
-        firstprivate( Nparts, Nouts, Ntime, dlon, dlat, dt_target, \
+        firstprivate( Nparts, Nouts, Ntime, dlon, dlat, dt_target, data_load_time, \
                       particle_lifespan, next_load_index, prev_out_ind ) \
-        reduction(max : out_ind)
+        reduction( max:out_ind )
         {
 
             #pragma omp for collapse(1) schedule(static)
@@ -289,7 +297,7 @@ void particles_evolve_trajectories(
 
                 //
                 time_block_0 = time.at(next_load_index-1);
-                time_block_1 = std::fmin( data_load_time, target_times.back() );
+                time_block_1 = data_load_time;
 
                 // Particle time
                 t_part    = time_block_0;   //
@@ -297,10 +305,8 @@ void particles_evolve_trajectories(
                 step_iter = 0;              //
 
                 // Particle position
-                index = Index(0,       0,      prev_out_ind, Ip,
-                              Ntime,   Ndepth, Nouts,        Nparts);
-                lon0 = part_lon_hist.at(index);
-                lat0 = part_lat_hist.at(index);
+                lon0 = lon_tmps[Ip];
+                lat0 = lat_tmps[Ip];
 
                 // Check if initial positions are fill_value, and recycle if they are
                 // RECYCLE!!
@@ -324,7 +330,6 @@ void particles_evolve_trajectories(
 
                 // Seed values for velocities (only used for dt)
                 particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
-                if ( (bottom < 0) or (top < 0) ) { continue; }
                 vel_lon_part = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lon_0, 
                         mask, left, right, bottom, top, 0, 0, 1);
 
@@ -341,70 +346,30 @@ void particles_evolve_trajectories(
 
                     dt_max = cfl * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
                                              dy_loc / std::max(vel_lat_part, 1e-3) );
-                    if (dt == 0) { dt = 0.01 * dt_max; }
+                    dt_min = 1e-5 * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
+                                              dy_loc / std::max(vel_lat_part, 1e-3) );
+                    if (dt == 0) { dt = dt_min; }
 
-                    // If we're close to an output time, adjust the dt to land on it exactly
-                    if ( ( (size_t)out_ind < target_times.size() )
-                            and ( (t_part + dt) - target_times.at(out_ind) > (dt_target / 50.) ) 
-                       )
+                    // Adjust dt to avoid stepping too far passed an output
+                    if ( ( out_ind < Nouts ) and ( (t_part + dt) > target_times.at(out_ind) + 0.01*dt_target ) )
                     {
                         dt_max = target_times.at(out_ind) - t_part;
                         dt = dt_max;
+                        dt_min = dt_max;
                     }
 
                     //
                     //// RKF45 Time-stepping
                     //
                     RKF45_update( lon_new, lat_new, dt_new,
-                            t_part, lon0, lat0, dt, dt_max,
+                            t_part, lon0, lat0, dt, dt_max, dt_min,
                             vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1,
                             time_block_0, time_block_1, lat, lon, mask
                             );
                     lon0 = lon_new;
                     lat0 = lat_new;
                     dt = dt_new;
-
-                    //
-                    //// Time-stepping is a simple first-order symplectic scheme
-                    //
-                    /*
-                    time_p = ( t_part - time_block_0 ) / ( time_block_1 - time_block_0 );
-
-                    //
-                    //// Get u_lon at position and advance lon position
-                    //
-                    particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
-                    if ( (bottom < 0) or (top < 0) ) { break; }
-                    up_0 = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lon_0, 
-                            mask, left, right, bottom, top, 0, 0, 1);
-                    up_1 = particles_interp_from_edges (lat0, lon0, lat, lon, &vel_lon_1, 
-                            mask, left, right, bottom, top, 0, 0, 1);
-                    vel_lon_part = up_0 * (1 - time_p) + up_1 * time_p;
-                    if ( fabs(vel_lon_part) > 100. ) { break; }
-
-                    // convert to radial velocity and step in space
-                    lon0 += dt * vel_lon_part / (constants::R_earth * cos(lat0));
-                    if (lon0 >  M_PI) { lon0 -= 2 * M_PI; }
-                    if (lon0 < -M_PI) { lon0 += 2 * M_PI; }
-
-                    //
-                    //// Get u_lat at position and advance lat position
-                    //
-                    particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
-                    if ( (bottom < 0) or (top < 0) ) { break; }
-                    vp_0 = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lat_0, 
-                            mask, left, right, bottom, top, 0, 0, 1);
-                    vp_1 = particles_interp_from_edges (lat0, lon0, lat, lon, &vel_lat_1, 
-                            mask, left, right, bottom, top, 0, 0, 1);
-                    vel_lat_part = vp_0 * (1 - time_p) + vp_1 * time_p;
-                    if ( fabs(vel_lat_part) > 100. ) { break; }
-
-                    // convert to radial velocity and step in space
-                    lat0 += dt * vel_lat_part / constants::R_earth;
-
-                    // Update time
                     t_part += dt;
-                    */
 
                     // Keep track of if we're going to recycle at the next output
                     //  we're syncing recycling with outputs so that we can flag
@@ -413,9 +378,7 @@ void particles_evolve_trajectories(
 
 
                     // Track, if at right time
-                    if (      (t_part < target_times.back()) 
-                            and (t_part >= target_times.at(out_ind)) 
-                       ){
+                    if ( (t_part >= target_times.at(out_ind)) and (out_ind < Nouts) ){
 
                         index = Index(0,       0,      out_ind, Ip,
                                       Ntime,   Ndepth, Nouts,   Nparts);
@@ -426,12 +389,19 @@ void particles_evolve_trajectories(
                             next_recycle_time += particle_lifespan; 
                             // UPDATE PARTICLE POSITION!
 
-
                             do_recycle = false;
                         } else {
                             part_lon_hist.at(index) = lon0;
                             part_lat_hist.at(index) = lat0;
                         }
+
+                        up_0 = get_at_point( t_part, lon0, lat0, 
+                                vel_lon_0, vel_lon_1, time_block_0, time_block_1, lat, lon, mask );
+                        vp_0 = get_at_point( t_part, lon0, lat0, 
+                                vel_lat_0, vel_lat_1, time_block_0, time_block_1, lat, lon, mask );
+
+                        field_trajectories.at(0).at(index) = up_0;
+                        field_trajectories.at(1).at(index) = vp_0;
 
 
                         /*
@@ -453,9 +423,11 @@ void particles_evolve_trajectories(
 
                     step_iter++;
                 } // close inner time loop
+                lon_tmps[Ip] = lon0;
+                lat_tmps[Ip] = lat0;
             } // close particle loop
         } // close pragma 
-        prev_out_ind = out_ind;
+        prev_out_ind = out_ind-1;
         #if DEBUG >= 1
         if (wRank == 0) {
             fprintf( stdout, "Finished time-block %zu. Previous out index is %d.\n", 

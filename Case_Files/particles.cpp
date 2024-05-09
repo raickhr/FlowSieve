@@ -156,18 +156,16 @@ int main(int argc, char *argv[]) {
 
     // Tracked fields is currently broken. Need to figure out how
     //  to make it work with the leap-frog loading system
-    /*
     names_of_tracked_fields.push_back( "vel_lon");
-    fields_to_track.push_back(&u_lon);
+    //fields_to_track.push_back(&u_lon);
 
     names_of_tracked_fields.push_back( "vel_lat");
-    fields_to_track.push_back(&u_lat);
-    */
+    //fields_to_track.push_back(&u_lat);
 
     // Storage for tracked fields
-    std::vector< std::vector< double > > field_trajectories(fields_to_track.size());
+    std::vector< std::vector< double > > field_trajectories(names_of_tracked_fields.size());
 
-    for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
+    for (size_t Ifield = 0; Ifield < names_of_tracked_fields.size(); ++Ifield) {
         field_trajectories.at(Ifield).resize(Npts * Nouts, constants::fill_value);
     }
 
@@ -225,14 +223,11 @@ int main(int argc, char *argv[]) {
     write_field_to_output(part_lon_hist, "longitude", starts, counts, output_fname, &out_mask);
     write_field_to_output(part_lat_hist, "latitude",  starts, counts, output_fname, &out_mask);
 
-    /*
-    for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
-        MPI_Barrier(MPI_COMM_WORLD);
+    for (size_t Ifield = 0; Ifield < names_of_tracked_fields.size(); ++Ifield) {
         write_field_to_output(field_trajectories.at(Ifield), 
                 names_of_tracked_fields.at(Ifield),  
                 starts, counts, output_fname, &out_mask);
     }
-    */
 
     MPI_Finalize();
     return 0;
