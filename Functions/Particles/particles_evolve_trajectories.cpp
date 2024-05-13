@@ -438,7 +438,7 @@ void particles_evolve_trajectories(
 
     const double dlon = lon.at(1) - lon.at(0),
                  dlat = lat.at(1) - lat.at(0),
-                 cfl_max  = 1e-2, // this is for the upper-bound of dt
+                 cfl_max  = 1e-1, // this is for the upper-bound of dt
                  cfl_min  = 1e-5, // this is for the lower-bound of dt
                  U0   = 2.,
                  dt_target = target_times.at(1) - target_times.at(0);
@@ -459,11 +459,28 @@ void particles_evolve_trajectories(
     unsigned int out_ind=0, prev_out_ind, step_iter, Ip;
     size_t index, next_load_index = 1;
 
+    int perc_base = 5;
+    int perc, perc_count=0;
+
     // Step through time 'blocks' i.e. get to the time of the next velocity data
     //  each particle is using adaptive stepping, so just loop through them getting there
     // We've already loaded in the first two times, so just flag the target time and continue.
     prev_out_ind = 0;
     for ( next_load_index = 1; next_load_index < Ntime; next_load_index++ ) {
+
+        #if DEBUG >= 0
+        if ( wRank == 0 ) {
+            // Every perc_base percent, print a dot, but only the first thread
+            while ( ((double)(next_load_index+1) / Ntime) * 100 >= perc ) {
+                perc_count++;
+                if (perc_count % 5 == 0) { fprintf(stdout, "|"); }
+                else                     { fprintf(stdout, "."); }
+                fflush(stdout);
+                perc += perc_base;
+            }
+        }
+        #endif
+
         data_load_time = time.at(next_load_index);
 
         if (next_load_index > 1) {
