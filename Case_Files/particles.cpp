@@ -45,29 +45,61 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    const bool asked_help = input.cmdOptionExists("--help");
+    if (asked_help) {
+        fprintf( stdout, "\033[1;4mThe command-line input arguments [and default values] are:\033[0m\n" );
+    }
     // first argument is the flag, second argument is default value (for when flag is not present)
-    const std::string   &zonal_vel_name   = input.getCmdOption("--zonal_vel",   "uo"),
-                        &merid_vel_name   = input.getCmdOption("--merid_vel",   "vo"),
-                        &input_fname      = input.getCmdOption("--input_file",  "input.nc"),
-                        &output_fname     = input.getCmdOption("--output_file", "particles.nc"),
-                        &time_units       = input.getCmdOption("--time_unit",   "hours");
+    const std::string   &zonal_vel_name   = input.getCmdOption("--zonal_vel",   
+                                                               "uo",
+                                                               asked_help,
+                                                               "Name of zonal velocity variable in the input file."),
+                        &merid_vel_name   = input.getCmdOption("--merid_vel",   
+                                                               "vo",
+                                                               asked_help,
+                                                               "Name of the meridional velocity variable in the input file."),
+                        &input_fname      = input.getCmdOption("--input_file",  
+                                                               "input.nc",
+                                                               asked_help,
+                                                               "Path to netCDF file containing velocity information."),
+                        &output_fname     = input.getCmdOption("--output_file", 
+                                                               "particles.nc",
+                                                               asked_help,
+                                                               "Path to netCDF file to be created for output. Will clobber existing file."),
+                        &time_units       = input.getCmdOption("--time_unit",   
+                                                               "hours",
+                                                               asked_help,
+                                                               "Time unit used in the input file. Options are: seconds, minutes, hours, days");
 
     // particles per MPI process
-    const std::string &particles_string = input.getCmdOption("--particle_per_mpi", "1000");
+    const std::string &particles_string = input.getCmdOption("--particle_per_mpi",
+                                                             "1000",
+                                                             asked_help,
+                                                             "Number of particles to be generated and evolved by each MPI rank.");
     const size_t Npts = stoi(particles_string);  
     #if DEBUG >= 0
-    fprintf(stdout, "  Using %'zu particles per mpi process.\n", Npts);
+    if ( not(asked_help) ) {
+        fprintf(stdout, "  Using %'zu particles per mpi process.\n", Npts);
+    }
     #endif
 
-    const std::string &output_frequency_string = input.getCmdOption("--output_frequency", "3600");
+    const std::string &output_frequency_string = input.getCmdOption("--output_frequency",
+                                                                    "3600",
+                                                                    asked_help,
+                                                                    "Frequency [in seconds] to output particle positions.");
     const double out_freq = stod(output_frequency_string);  // in seconds
 
-    const std::string &final_time_string = input.getCmdOption("--final_time", "-1");
+    const std::string &final_time_string = input.getCmdOption("--final_time", "-1", asked_help);
     const double final_time_input = stod(final_time_string);  // in seconds
 
-    const std::string &particle_lifespan_string = input.getCmdOption("--particle_lifespan", "-1");
+    const std::string &particle_lifespan_string = input.getCmdOption("--particle_lifespan",
+                                                                     "-1",
+                                                                     asked_help,
+                                                                     "Specifies how often particles are 'recycled' [i.e. randomly re-seeded]");
     const double particle_lifespan = stod(particle_lifespan_string);  // in seconds
 
+
+    if (asked_help) { return 0; }
 
     // Set OpenMP thread number
     const int max_threads = omp_get_max_threads();
