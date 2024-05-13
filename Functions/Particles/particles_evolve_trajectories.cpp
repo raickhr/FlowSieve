@@ -1,4 +1,5 @@
 #include <cassert>
+#include <time.h>
 #include <math.h>
 #include <algorithm>
 #include <vector>
@@ -34,6 +35,29 @@ bool check_if_recycling(
         }
     }
     return false; // back-up catch-all
+}
+
+void recycle_position( 
+        double & lon0,
+        double & lat0,
+        const std::vector<double> & longitude,
+        const std::vector<double> & latitude
+        ) {
+
+    // Set the bounds
+    double lon_rng, lat_rng, lon_mid, lat_mid;
+
+    lon_rng =         longitude.back() - longitude.front();
+    lat_rng = 0.9 * ( latitude.back()  - latitude.front() );
+    lon_mid = 0.5 * ( longitude.back() + longitude.front());
+    lat_mid = 0.5 * ( latitude.back()  + latitude.front() );
+    
+    // Update the random seed
+    srand( time(NULL) );
+
+    // And randomize the particle
+    lon0 = ( ((double) rand() / (RAND_MAX)) - 0.5) * lon_rng + lon_mid;
+    lat0 = ( ((double) rand() / (RAND_MAX)) - 0.5) * lat_rng + lat_mid;
 }
 
 void move_on_sphere(
@@ -85,7 +109,7 @@ double get_at_point(
     return var_val;
 }
 
-void RKF45_update(
+void SimplecticEuler_update(
         double & x_new,
         double & y_new,
         double & dt_new,
@@ -106,18 +130,61 @@ void RKF45_update(
         const std::vector<bool> & mask
         ) {
 
-    // Pile of RKF45 coefficients
-    const double A0 = 0,    CH0 = 47./450,  CT0 = 1./150,
-                 A1 = 2./9, CH1 = 0,        CT1 = 0,
-                 A2 = 1./3, CH2 = 12./25,   CT2 = -3./100,
-                 A3 = 3./4, CH3 = 32./225,  CT3 = 16./75,
-                 A4 = 1.,   CH4 = 1./30,    CT4 = 1./20,
-                 A5 = 5./6, CH5 = 6./25,    CT5 = -6./25,
-                 B10 = 2./9,
-                 B20 = 1./12,   B21 = 1./4,
-                 B30 = 69./128, B31 = -243./128, B32 = 135./64,
-                 B40 = -17./12, B41 = 27./4,     B42 = -27./5,   B43 = 16./15,
-                 B50 = 65./432, B51 = -5./16,    B52 = 13./16,   B53 = 4./27,    B54 = 5./144;
+    double dt = dt_seed;
+
+    double u0 = get_at_point( t0, x0, y0, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+    double x1, y1;
+    move_on_sphere( x1, y1, x0, y0, dt * u0, 0. );
+
+    double v0 = get_at_point( t0, x1, y0, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+    double x2, y2;
+    move_on_sphere( x2, y2, x1, y1, 0., dt * v0 );
+
+    dt_new = dt;
+    x_new = x2;
+    y_new = y2;
+}
+
+void RKF45_update( // Fehlbers's RK 4(5)
+        double & x_new,
+        double & y_new,
+        double & dt_new,
+        const double t0,
+        const double x0,
+        const double y0,
+        const double dt_seed,
+        const double dt_max,
+        const double dt_min,
+        const std::vector<double> & u_lon_0,
+        const std::vector<double> & u_lon_1,
+        const std::vector<double> & u_lat_0,
+        const std::vector<double> & u_lat_1,
+        const double tb0,
+        const double tb1,
+        const std::vector<double> & lat,
+        const std::vector<double> & lon,
+        const std::vector<bool> & mask
+        ) {
+
+    // Table 5.1 (page 177 of "Solving Ordinary Differential Equations, 2nd Ed.", Hairer, Norsett, Wanner
+
+    // Butchers tableau
+    const double 
+        A10 = 1./4,
+        A20 = 3./32,        A21 = 9./32,
+        A30 = 1932./2197,   A31 = -7200./2197,  A32 = 7296./2197,
+        A40 = 439./216,     A41 = -8.,          A42 = 3680./513,    A43 = -845./4104,
+        A50 = -8./27,       A51 = 2.,           A52 = -3544./2565,  A53 = 1859./4104,   A54 = -11./40;
+
+    const double    C0 = 0, 
+                    C1 = 1./4, 
+                    C2 = 3./8,
+                    C3 = 12./13,
+                    C4 = 1.,
+                    C5 = 1./2;
+
+    const double B0 = 25./216, B1 = 0., B2 = 1408./2565, B3 = 2197./4104, B4 = -1./5, B5 = 0.;
+    const double B0hat = 16./135, B1hat = 0., B2hat = 6656./12825, B3hat = 28561./56430, B4hat = -9./50, B5hat = 2./55;
 
     // and a pile of working variables
     double t, u0, u1, u2, u3, u4, u5, 
@@ -126,61 +193,67 @@ void RKF45_update(
                   y1, y2, y3, y4, y5, y_final;
     double dt = dt_seed, dt_tmp = dt_seed;
 
-    const double eps = 1e-3; // in m/s
+    const double vel_tol = 1e-6, // in m/s, will then be scaled by dt
+                 eps     = 1.;   // if displacement error is > vel_tol * dt, reduce step size
     double TE = 10 * eps;
 
     while ( TE > eps ) {
 
         dt = dt_tmp;
+
+        // Note: the u,v values have dt multiplied in, so they are all displacements in m
     
         // First increment
-        t = t0 + A0 * dt;
+        t = t0 + C0 * dt;
         u0 = dt * get_at_point( t, x0, y0, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v0 = dt * get_at_point( t, x0, y0, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
         // Second increment
-        t = t0 + A1 * dt;
-        move_on_sphere( x1, y1, x0, y0, B10 * u0, B10 * v0 );
+        t = t0 + C1 * dt;
+        move_on_sphere( x1, y1, x0, y0, A10 * u0, A10 * v0 );
         u1 = dt * get_at_point( t, x1, y1, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v1 = dt * get_at_point( t, x1, y1, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
         // Third increment
-        t = t0 + A2 * dt;
-        move_on_sphere( x2, y2, x0, y0, B20 * u0 + B21 * u1, B20 * v0 + B21 * v1 );
+        t = t0 + C2 * dt;
+        move_on_sphere( x2, y2, x0, y0, A20 * u0 + A21 * u1, A20 * v0 + A21 * v1 );
         u2 = dt * get_at_point( t, x2, y2, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v2 = dt * get_at_point( t, x2, y2, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
         // Fourth increment
-        t = t0 + A3 * dt;
-        move_on_sphere( x3, y3, x0, y0, B30 * u0 + B31 * u1 + B32 * u2, 
-                                        B30 * v0 + B31 * v1 + B32 * v2 );
+        t = t0 + C3 * dt;
+        move_on_sphere( x3, y3, x0, y0, A30 * u0 + A31 * u1 + A32 * u2, 
+                                        A30 * v0 + A31 * v1 + A32 * v2 );
         u3 = dt * get_at_point( t, x3, y3, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v3 = dt * get_at_point( t, x3, y3, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
         // Fifth increment
-        t = t0 + A4 * dt;
-        move_on_sphere( x4, y4, x0, y0, B40 * u0 + B41 * u1 + B42 * u2 + B43 * u3, 
-                                        B40 * v0 + B41 * v1 + B42 * v2 + B43 * v3);
+        t = t0 + C4 * dt;
+        move_on_sphere( x4, y4, x0, y0, A40 * u0 + A41 * u1 + A42 * u2 + A43 * u3, 
+                                        A40 * v0 + A41 * v1 + A42 * v2 + A43 * v3);
         u4 = dt * get_at_point( t, x4, y4, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v4 = dt * get_at_point( t, x4, y4, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
         // Sixth increment
-        t = t0 + A5 * dt;
-        move_on_sphere( x5, y5, x0, y0, B50 * u0 + B51 * u1 + B52 * u2 + B53 * u3 + B54 * u4, 
-                                        B50 * v0 + B51 * v1 + B52 * v2 + B53 * v3 + B54 * v4);
+        t = t0 + C5 * dt;
+        move_on_sphere( x5, y5, x0, y0, A50 * u0 + A51 * u1 + A52 * u2 + A53 * u3 + A54 * u4, 
+                                        A50 * v0 + A51 * v1 + A52 * v2 + A53 * v3 + A54 * v4);
         u5 = dt * get_at_point( t, x5, y5, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
         v5 = dt * get_at_point( t, x5, y5, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
 
 
         // Net displacement vector
-        double  u_final = CH0 * u0 + CH1 * u1 + CH2 * u2 + CH3 * u3 + CH4 * u4 * CH5 * u5,
-                v_final = CH0 * v0 + CH1 * v1 + CH2 * v2 + CH3 * v3 + CH4 * v4 * CH5 * v5;
-        move_on_sphere( x_final, y_final, x0, y0, u_final, v_final );
+        double  u_final_LO = B0 * u0 + B1 * u1 + B2 * u2 + B3 * u3 + B4 * u4 * B5 * u5,
+                v_final_LO = B0 * v0 + B1 * v1 + B2 * v2 + B3 * v3 + B4 * v4 * B5 * v5;
+        double  u_final_HO = B0hat * u0 + B1hat * u1 + B2hat * u2 + B3hat * u3 + B4hat * u4 * B5hat * u5,
+                v_final_HO = B0hat * v0 + B1hat * v1 + B2hat * v2 + B3hat * v3 + B4hat * v4 * B5hat * v5;
 
-        // Estimate the truncation error
-        double  TE_u = CT0 * u0 + CT1 * u1 + CT2 * u2 + CT3 * u3 + CT4 * u4 * CT5 * u5,
-                TE_v = CT0 * v0 + CT1 * v1 + CT2 * v2 + CT3 * v3 + CT4 * v4 * CT5 * v5;
-        TE = sqrt( TE_u*TE_u + TE_v*TE_v );
+        // The error estimate is the different in the two displacement vectors
+        double displacement_error = sqrt( pow( u_final_LO - u_final_HO, 2.) + pow( v_final_LO - v_final_HO, 2. ) );
+        TE = displacement_error / ( vel_tol * dt );
+
+        // For numerical reasons, we advance forward with the low-order solution to preserve our error estimates
+        move_on_sphere( x_final, y_final, x0, y0, u_final_LO, v_final_LO );
 
         // If the error was too large, then we'll need to redo the step with a smaller dt.
         // If the error was smaller than our tolerance, than the step is adaptively increased
@@ -193,7 +266,139 @@ void RKF45_update(
     dt_new = dt;
     x_new = x_final;
     y_new = y_final;
-    //assert(false);
+}
+
+void DOPRI5_update( // Dormand-Prince 5(4)
+        double & x_new,
+        double & y_new,
+        double & dt_new,
+        const double t0,
+        const double x0,
+        const double y0,
+        const double dt_seed,
+        const double dt_max,
+        const double dt_min,
+        const std::vector<double> & u_lon_0,
+        const std::vector<double> & u_lon_1,
+        const std::vector<double> & u_lat_0,
+        const std::vector<double> & u_lat_1,
+        const double tb0,
+        const double tb1,
+        const std::vector<double> & lat,
+        const std::vector<double> & lon,
+        const std::vector<bool> & mask
+        ) {
+
+    // Table 5.2 (page 178 of "Solving Ordinary Differential Equations, 2nd Ed.", Hairer, Norsett, Wanner)
+
+
+    // Butcher tableau
+    const double 
+        A10 = 1./5,
+        A20 = 3./40,        A21 = 9./40,
+        A30 = 44./45,       A31 = -56./15,      A32 = 32./9,
+        A40 = 19372./6561,  A41 = -25360./2187, A42 = 64448./6561,  A43 = -212./729,
+        A50 = 9017./3168,   A51 = -355./33,     A52 = 46732./5247,  A53 = 49./176,   A54 = -5103./18656,
+        A60 = 35./384,      A61 = 0.,           A62 = 500./1113,    A63 = 125./192,  A64 = -2187./6784,   A65 = 11./84;
+
+    const double    C0 = 0, 
+                    C1 = 1./5, 
+                    C2 = 3./10,
+                    C3 = 4./5,
+                    C4 = 8./9,
+                    C5 = 1.,
+                    C6 = 1.;
+
+    const double B0    = 35./384,     B1    = 0., B2    = 500./1113,   B3    = 125./192, B4    = -2187./6784,    
+                 B5    = 11./84,      B6    = 0.;
+    const double B0hat = 5179./57600, B1hat = 0., B2hat = 7571./16695, B3hat = 393./640, B4hat = -92097./339200, 
+                 B5hat = 187./2100,   B6hat = 1./40;
+
+    // and a pile of working variables
+    double t, u0, u1, u2, u3, u4, u5, u6,
+              v0, v1, v2, v3, v4, v5, v6,
+                  x1, x2, x3, x4, x5, x6, x_final, 
+                  y1, y2, y3, y4, y5, y6, y_final;
+    double dt = dt_seed, dt_tmp = dt_seed;
+
+    const double vel_tol = 1e-6, // in m/s, will then be scaled by dt to give displacement tolerance
+                 eps     = 1.;   // if displacement error is > vel_tol * dt, reduce step size
+    double TE = 10 * eps;
+
+    while ( TE > eps ) {
+
+        dt = dt_tmp;
+    
+        // First increment
+        t = t0 + C0 * dt;
+        u0 = dt * get_at_point( t, x0, y0, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v0 = dt * get_at_point( t, x0, y0, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Second increment
+        t = t0 + C1 * dt;
+        move_on_sphere( x1, y1, x0, y0, A10 * u0, A10 * v0 );
+        u1 = dt * get_at_point( t, x1, y1, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v1 = dt * get_at_point( t, x1, y1, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Third increment
+        t = t0 + C2 * dt;
+        move_on_sphere( x2, y2, x0, y0, A20 * u0 + A21 * u1, A20 * v0 + A21 * v1 );
+        u2 = dt * get_at_point( t, x2, y2, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v2 = dt * get_at_point( t, x2, y2, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Fourth increment
+        t = t0 + C3 * dt;
+        move_on_sphere( x3, y3, x0, y0, A30 * u0 + A31 * u1 + A32 * u2, 
+                                        A30 * v0 + A31 * v1 + A32 * v2 );
+        u3 = dt * get_at_point( t, x3, y3, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v3 = dt * get_at_point( t, x3, y3, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Fifth increment
+        t = t0 + C4 * dt;
+        move_on_sphere( x4, y4, x0, y0, A40 * u0 + A41 * u1 + A42 * u2 + A43 * u3, 
+                                        A40 * v0 + A41 * v1 + A42 * v2 + A43 * v3);
+        u4 = dt * get_at_point( t, x4, y4, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v4 = dt * get_at_point( t, x4, y4, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Sixth increment
+        t = t0 + C5 * dt;
+        move_on_sphere( x5, y5, x0, y0, A50 * u0 + A51 * u1 + A52 * u2 + A53 * u3 + A54 * u4, 
+                                        A50 * v0 + A51 * v1 + A52 * v2 + A53 * v3 + A54 * v4);
+        u5 = dt * get_at_point( t, x5, y5, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v5 = dt * get_at_point( t, x5, y5, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+        // Seventh increment
+        t = t0 + C6 * dt;
+        move_on_sphere( x6, y6, x0, y0, A60 * u0 + A61 * u1 + A62 * u2 + A63 * u3 + A64 * u4 + A65 * u5, 
+                                        A60 * v0 + A61 * v1 + A62 * v2 + A63 * v3 + A64 * v4 + A65 * v5);
+        u6 = dt * get_at_point( t, x6, y6, u_lon_0, u_lon_1, tb0, tb1, lat, lon, mask );
+        v6 = dt * get_at_point( t, x6, y6, u_lat_0, u_lat_1, tb0, tb1, lat, lon, mask );
+
+
+        // Net displacement vector
+        double  u_final_LO = B0 * u0 + B1 * u1 + B2 * u2 + B3 * u3 + B4 * u4 * B5 * u5 + B6 * u6,
+                v_final_LO = B0 * v0 + B1 * v1 + B2 * v2 + B3 * v3 + B4 * v4 * B5 * v5 + B6 * v6;
+        double  u_final_HO = B0hat * u0 + B1hat * u1 + B2hat * u2 + B3hat * u3 + B4hat * u4 * B5hat * u5 + B6hat * u6,
+                v_final_HO = B0hat * v0 + B1hat * v1 + B2hat * v2 + B3hat * v3 + B4hat * v4 * B5hat * v5 + B6hat * v6;
+
+        // The error estimate is the different in the two displacement vectors
+        double displacement_error = sqrt( pow( u_final_LO - u_final_HO, 2.) + pow( v_final_LO - v_final_HO, 2. ) );
+        TE = displacement_error / ( vel_tol * dt );
+
+        // For numerical reasons, we advance forward with the low-order solution to preserve our error estimates
+        move_on_sphere( x_final, y_final, x0, y0, u_final_LO, v_final_LO );
+
+        // If the error was too large, then we'll need to redo the step with a smaller dt.
+        // If the error was smaller than our tolerance, than the step is adaptively increased
+        dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+
+        if (dt_tmp <= dt_min) { break; } // if we're at the smallest dt, just stop
+    }
+
+    // After success, store the desired values
+    dt_new = dt;
+    x_new = x_final;
+    y_new = y_final;
 }
 
 void particles_evolve_trajectories(
@@ -228,13 +433,13 @@ void particles_evolve_trajectories(
            dx_loc, dy_loc, dt, dt_max, dt_min, dt_new,
            up_0, up_1, vp_0, vp_1,
            vel_lon_part, vel_lat_part, field_val,
-           test_val, lon_rng, lat_rng, lon_mid, lat_mid,
-           time_p, next_recycle_time, time_block_0, time_block_1,
+           test_val, time_p, next_recycle_time, time_block_0, time_block_1,
            data_load_time;
 
     const double dlon = lon.at(1) - lon.at(0),
                  dlat = lat.at(1) - lat.at(0),
-                 cfl  = 1e-1,
+                 cfl_max  = 1e-2, // this is for the upper-bound of dt
+                 cfl_min  = 1e-5, // this is for the lower-bound of dt
                  U0   = 2.,
                  dt_target = target_times.at(1) - target_times.at(0);
 
@@ -291,7 +496,6 @@ void particles_evolve_trajectories(
             for (Ip = 0; Ip < Nparts; ++Ip) {
 
                 // Give each particle a different random seed
-                srand( (Ip + wRank * Nparts) * next_load_index );
                 do_recycle = false;
                 dt = 0.;
 
@@ -309,24 +513,9 @@ void particles_evolve_trajectories(
                 lat0 = lat_tmps[Ip];
 
                 // Check if initial positions are fill_value, and recycle if they are
-                // RECYCLE!!
-
-                /*
-                // Get initial values for tracked fields
-                index = Index(0,       0,      out_ind, Ip,
-                              Ntime,   Ndepth, Nouts,   Nparts);
-
-                   time_p = ( t_part - time_block_0 ) / ( time_block_1 - time_block_0 );
-
-                   particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
-                   for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
-                   field_val = particles_interp_from_edges(lat0, lon0, lat, lon, 
-                   fields_to_track.at(Ifield), mask,
-                   left, right, bottom, top, time_p, ref_ind, Ntime);
-                   field_trajectories.at(Ifield).at(index) = field_val;
-                   }
-                out_ind++;
-                */
+                if ( (lon0 == constants::fill_value) or (lat0 == constants::fill_value) ) {
+                    recycle_position( lon0, lat0, lon, lat );
+                }
 
                 // Seed values for velocities (only used for dt)
                 particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
@@ -336,6 +525,14 @@ void particles_evolve_trajectories(
                 vel_lat_part = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lat_0, 
                         mask, left, right, bottom, top, 0, 0, 1);
 
+                // Get initial values for tracked fields
+                if ( next_load_index == 1 ) {
+                    index = Index(0,       0,      0,      Ip,
+                                  Ntime,   Ndepth, Nouts,  Nparts);
+                    field_trajectories.at(0).at(index) = vel_lon_part;
+                    field_trajectories.at(1).at(index) = vel_lat_part;
+                }
+
                 while (t_part < time_block_1) {
 
                     // Get local dt
@@ -344,11 +541,11 @@ void particles_evolve_trajectories(
                     dx_loc = dlon * constants::R_earth * cos(lat0);
                     dy_loc = dlat * constants::R_earth;
 
-                    dt_max = cfl * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
-                                             dy_loc / std::max(vel_lat_part, 1e-3) );
-                    dt_min = 1e-5 * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
-                                              dy_loc / std::max(vel_lat_part, 1e-3) );
-                    if (dt == 0) { dt = dt_min; }
+                    dt_max = cfl_max * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
+                                                 dy_loc / std::max(vel_lat_part, 1e-3) );
+                    dt_min = cfl_min * std::min( dx_loc / std::max(vel_lon_part, 1e-3), 
+                                                 dy_loc / std::max(vel_lat_part, 1e-3) );
+                    if (dt == 0) { dt = dt_min; } // start with dt_min, and adapt from there
 
                     // Adjust dt to avoid stepping too far passed an output
                     if ( ( out_ind < Nouts ) and ( (t_part + dt) > target_times.at(out_ind) + 0.01*dt_target ) )
@@ -361,7 +558,37 @@ void particles_evolve_trajectories(
                     //
                     //// RKF45 Time-stepping
                     //
+                    /*
                     RKF45_update( lon_new, lat_new, dt_new,
+                            t_part, lon0, lat0, dt, dt_max, dt_min,
+                            vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1,
+                            time_block_0, time_block_1, lat, lon, mask
+                            );
+                    lon0 = lon_new;
+                    lat0 = lat_new;
+                    dt = dt_new;
+                    t_part += dt;
+                    */
+
+                    //
+                    //// Simplectide Euler time-stepping
+                    //
+                    /*
+                    SimplecticEuler_update( lon_new, lat_new, dt_new,
+                            t_part, lon0, lat0, dt_min, dt_min, dt_min,
+                            vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1,
+                            time_block_0, time_block_1, lat, lon, mask
+                            );
+                    lon0 = lon_new;
+                    lat0 = lat_new;
+                    dt = dt_new;
+                    t_part += dt;
+                    */
+
+                    //
+                    //// DOPRI5 Time-stepping
+                    //
+                    DOPRI5_update( lon_new, lat_new, dt_new,
                             t_part, lon0, lat0, dt, dt_max, dt_min,
                             vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1,
                             time_block_0, time_block_1, lat, lon, mask
@@ -384,10 +611,13 @@ void particles_evolve_trajectories(
                                       Ntime,   Ndepth, Nouts,   Nparts);
 
                         if ( do_recycle ) {
+                            // Flag the recycle with fill_value
                             part_lon_hist.at(index) = constants::fill_value;
                             part_lat_hist.at(index) = constants::fill_value;
                             next_recycle_time += particle_lifespan; 
-                            // UPDATE PARTICLE POSITION!
+
+                            // And recycle
+                            recycle_position( lon0, lat0, lon, lat );
 
                             do_recycle = false;
                         } else {
@@ -403,18 +633,6 @@ void particles_evolve_trajectories(
                         field_trajectories.at(0).at(index) = up_0;
                         field_trajectories.at(1).at(index) = vp_0;
 
-
-                        /*
-                        particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
-
-                        for (size_t Ifield = 0; Ifield < fields_to_track.size(); ++Ifield) {
-                           field_val = particles_interp_from_edges(lat0, lon0, lat, lon, 
-                           fields_to_track.at(Ifield), mask,
-                           left, right, bottom, top, time_p, ref_ind, Ntime);
-                           field_trajectories.at(Ifield).at(index) = field_val;
-                        }
-
-                        */
                         out_ind++;
                     }
 
