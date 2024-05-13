@@ -460,7 +460,7 @@ void particles_evolve_trajectories(
     size_t index, next_load_index = 1;
 
     int perc_base = 5;
-    int perc, perc_count=0;
+    int perc = 0, perc_count=0;
 
     // Step through time 'blocks' i.e. get to the time of the next velocity data
     //  each particle is using adaptive stepping, so just loop through them getting there
