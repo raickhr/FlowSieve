@@ -13,27 +13,14 @@
 bool check_if_recycling( 
         const double dt, 
         const double time, 
-        const double next_recycle_time, 
-        const double particle_lifespan ) {
+        const double next_recycle_time,
+        const double particle_lifespan
+        ) {
     // Check if this particle is going to recycle
     //      i.e. if it gets reset to a new random location
     // A non-positive lifespan means no recycling
     if ( particle_lifespan <= 0 ) { return false; }
-
-    if (constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::Stochastic) {
-        // On average (ish) all of the particles will have recycled
-        // within a period of particle_lifespan
-        double test_val = ((double) rand() / (RAND_MAX));
-        if ( test_val * particle_lifespan < dt ) {
-            return true;
-        }
-    } else if (constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::FixedInterval) {
-        // If it's a fixed-interval recycling, just check if we've 
-        // passed the next recycle time
-        if ( time >= next_recycle_time ) {
-            return true;
-        }
-    }
+    if ( time >= next_recycle_time ) { return true; }
     return false; // back-up catch-all
 }
 
@@ -433,7 +420,7 @@ void particles_evolve_trajectories(
            dx_loc, dy_loc, dt, dt_max, dt_min, dt_new,
            up_0, up_1, vp_0, vp_1,
            vel_lon_part, vel_lat_part, field_val,
-           test_val, time_p, next_recycle_time, time_block_0, time_block_1,
+           test_val, time_p, time_block_0, time_block_1,
            data_load_time;
 
     const double dlon = lon.at(1) - lon.at(0),
@@ -454,13 +441,24 @@ void particles_evolve_trajectories(
     bool do_recycle;
 
     std::vector<double> lon_tmps = starting_lon, 
-                        lat_tmps = starting_lat;
+                        lat_tmps = starting_lat,
+                        recycle_times(Nparts,0);
 
     unsigned int out_ind=0, prev_out_ind, step_iter, Ip;
     size_t index, next_load_index = 1;
 
     int perc_base = 5;
     int perc = 0, perc_count=0;
+
+    if ( particle_lifespan > 0 ) {
+        for (Ip = 0; Ip < Nparts; Ip++) {
+            if ( constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::FixedInterval ) {
+                recycle_times[Ip] = time.at(0) + particle_lifespan;
+            } else if (constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::Stochastic) {
+                recycle_times[Ip] = time.at(0) - log((double) rand() / (RAND_MAX)) * particle_lifespan; 
+            }
+        }
+    }
 
     // Step through time 'blocks' i.e. get to the time of the next velocity data
     //  each particle is using adaptive stepping, so just loop through them getting there
@@ -495,14 +493,14 @@ void particles_evolve_trajectories(
         #pragma omp parallel \
         default(none) \
         shared( lat, lon, vel_lon_0, vel_lon_1, vel_lat_0, vel_lat_1, mask,\
-                target_times, time, part_lon_hist, part_lat_hist,\
+                target_times, time, part_lon_hist, part_lat_hist, recycle_times,\
                 field_trajectories, fields_to_track, lon_tmps, lat_tmps,\
                 wRank, wSize, stdout)\
         private(Ip, index, t_part, step_iter, lon0, lat0, \
                 dt_max, dt_min, dt_new, lon_new, lat_new, \
                 up_0, up_1, vp_0, vp_1, \
                 dx_loc, dy_loc, dt, time_p, vel_lon_part, vel_lat_part, field_val,\
-                do_recycle, next_recycle_time, time_block_0, time_block_1, \
+                do_recycle, time_block_0, time_block_1, \
                 left, right, bottom, top) \
         firstprivate( Nparts, Nouts, Ntime, dlon, dlat, dt_target, data_load_time, \
                       particle_lifespan, next_load_index, prev_out_ind ) \
@@ -512,7 +510,6 @@ void particles_evolve_trajectories(
             #pragma omp for collapse(1) schedule(static)
             for (Ip = 0; Ip < Nparts; ++Ip) {
 
-                // Give each particle a different random seed
                 do_recycle = false;
                 dt = 0.;
 
@@ -618,7 +615,7 @@ void particles_evolve_trajectories(
                     // Keep track of if we're going to recycle at the next output
                     //  we're syncing recycling with outputs so that we can flag
                     //  them as singleton nan values
-                    do_recycle = do_recycle or check_if_recycling( dt, t_part, next_recycle_time, particle_lifespan);
+                    do_recycle = do_recycle or check_if_recycling( dt, t_part, recycle_times[Ip], particle_lifespan );
 
 
                     // Track, if at right time
@@ -631,7 +628,11 @@ void particles_evolve_trajectories(
                             // Flag the recycle with fill_value
                             part_lon_hist.at(index) = constants::fill_value;
                             part_lat_hist.at(index) = constants::fill_value;
-                            next_recycle_time += particle_lifespan; 
+                            if ( constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::FixedInterval ) {
+                                recycle_times[Ip] += particle_lifespan; 
+                            } else if (constants::PARTICLE_RECYCLE_TYPE == constants::ParticleRecycleType::Stochastic) {
+                                recycle_times[Ip] += -log((double) rand() / (RAND_MAX)) * particle_lifespan; 
+                            }
 
                             // And recycle
                             recycle_position( lon0, lat0, lon, lat );
