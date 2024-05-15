@@ -612,6 +612,20 @@ void particles_evolve_trajectories(
                     dt = dt_new;
                     t_part += dt;
 
+                    // If our particle went out of bounds, just recycle now.
+                    if ( (lat0 <= lat.front()) or (lat0 >= lat.back()) ) {
+                        recycle_position( lon0, lat0, lon, lat );
+
+                        // We also need to flag the recycle in the previous output
+                        if (out_ind > 0) { 
+                            index = Index(0,       0,      out_ind-1, Ip,
+                                          Ntime,   Ndepth, Nouts,     Nparts);
+
+                            part_lon_hist.at(index) = constants::fill_value;
+                            part_lat_hist.at(index) = constants::fill_value;
+                        }
+                    }
+
                     // Keep track of if we're going to recycle at the next output
                     //  we're syncing recycling with outputs so that we can flag
                     //  them as singleton nan values
