@@ -77,11 +77,6 @@ int main(int argc, char *argv[]) {
                                                              asked_help,
                                                              "Number of particles to be generated and evolved by each MPI rank.");
     const size_t Npts = stoi(particles_string);  
-    #if DEBUG >= 0
-    if ( not(asked_help) ) {
-        fprintf(stdout, "  Using %'zu particles per mpi process.\n", Npts);
-    }
-    #endif
 
     const std::string &output_frequency_string = input.getCmdOption("--output_frequency",
                                                                     "3600",
@@ -260,6 +255,7 @@ int main(int argc, char *argv[]) {
                 names_of_tracked_fields.at(Ifield),  
                 starts, counts, output_fname, &out_mask);
     }
+    fprintf(stdout, "Processor %d of %d finished.\n", wRank+1, wSize);
 
     MPI_Finalize();
     return 0;
