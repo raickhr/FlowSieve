@@ -521,6 +521,12 @@ void filtering_helmholtz(
             vars_to_write.push_back("coarse_uv");
             vars_to_write.push_back("coarse_vv");
         }
+
+        vars_to_write.push_back("Pi_DVV");
+        vars_to_write.push_back("Pi_DTT");
+
+        vars_to_write.push_back("Pi_VDD");
+        vars_to_write.push_back("Pi_VTT");
     }
 
     // Compute the kernal alpha value (for baroclinic transfers)
@@ -1328,6 +1334,16 @@ void filtering_helmholtz(
                 ux_ux_tot, ux_uy_tot, ux_uz_tot, uy_uy_tot, uy_uz_tot, uz_uz_tot,
                 &u_x_tot_coarse, &u_y_tot_coarse, &u_z_tot_coarse );
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "compute_Pi_and_Z"); }
+
+        if (not(constants::MINIMAL_OUTPUT)) {
+            if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
+            write_field_to_output( Pi_DVV, "Pi_DVV", starts, counts, fname, &mask );
+            write_field_to_output( Pi_DTT, "Pi_DTT", starts, counts, fname, &mask );
+
+            write_field_to_output( Pi_VDD, "Pi_VDD", starts, counts, fname, &mask );
+            write_field_to_output( Pi_VTT, "Pi_VTT", starts, counts, fname, &mask );
+            if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "writing");  }
+        }
 
 
         //
