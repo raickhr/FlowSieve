@@ -253,6 +253,27 @@ void apply_filter_at_point(
         const std::vector<double> * weight = NULL
         );
 
+void apply_filter_at_point_aniso(
+        std::vector<double*> & coarse_vals,   
+        std::vector<double*> & dl_coarse_vals,
+        std::vector<double*> & dll_coarse_vals,
+        std::vector<double*> & aniso_vals,
+        std::vector<double*> & aniso_vals_dim,
+        double & dl_kernel_val,
+        double & dll_kernel_val,
+        const std::vector<const std::vector<double>*> & fields,
+        const dataset & source_data,
+        const int Itime,  const int Idepth, const int Ilat, const int Ilon,
+        const int LAT_lb,
+        const int LAT_ub,
+        const double scale,
+        const std::vector<bool> & use_mask,
+        const std::vector<double> & local_kernel,
+        const std::vector<double> & local_dl_kernel,
+        const std::vector<double> & local_dll_kernel,
+        const std::vector<double> * weight = NULL
+        );
+
 double kernel(const double distance, const double scale, const int deriv_order = 0);
 
 double kernel_alpha(void);

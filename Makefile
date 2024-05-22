@@ -218,9 +218,11 @@ $(CORE_TARGET_EXES): %.x : ${CORE_OBJS} ${INTERFACE_OBJS} ${DIRECT_FILTER_OBJS} 
 
 # Helmholtz
 HELM_TARGET_EXES := Case_Files/coarse_grain_helmholtz.x  \
-					Case_Files/coarse_grain_scalars.x
+					Case_Files/coarse_grain_scalars.x \
+					Case_Files/coarse_grain_scalars_aniso.x
 HELM_TARGET_OBJS := Case_Files/coarse_grain_helmholtz.o  \
-					Case_Files/coarse_grain_scalars.o
+					Case_Files/coarse_grain_scalars.o \
+					Case_Files/coarse_grain_scalars_aniso.o
 
 $(HELM_TARGET_OBJS): %.o : %.cpp constants.hpp
 	$(MPICXX) ${VERSION} $(LDFLAGS) -c $(CFLAGS) -o $@ $< $(LINKS) 

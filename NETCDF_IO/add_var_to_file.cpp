@@ -59,7 +59,7 @@ void add_var_to_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    fprintf(stdout, "  - added %s to %s -\n", varname, filename);
+    fprintf(stdout, "  - added %s to %s -\n", var_name.c_str(), filename.c_str());
     #endif
 
     ////
