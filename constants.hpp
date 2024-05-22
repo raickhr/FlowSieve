@@ -344,7 +344,7 @@ namespace constants
      * @ingroup constants
      */
     enum ParticleRecycleType : int { FixedInterval, Stochastic };
-    const int PARTICLE_RECYCLE_TYPE = ParticleRecycleType::FixedInterval;
+    const int PARTICLE_RECYCLE_TYPE = ParticleRecycleType::Stochastic;
 
 
     /*!

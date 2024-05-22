@@ -248,6 +248,16 @@ void read_var_from_file(
         const MPI_Comm = MPI_COMM_WORLD 
         );
 
+void read_var_from_file_at_time(
+        std::vector<double> &var,
+        const size_t time_index,
+        const std::string & var_name,
+        const std::string & filename,
+        std::vector<bool> *mask = NULL,
+        const double land_fill_value = 0.,
+        const MPI_Comm = MPI_COMM_WORLD 
+        );
+
 void read_mask_from_file(
         std::vector<bool> &mask,
         const std::string & var_name,

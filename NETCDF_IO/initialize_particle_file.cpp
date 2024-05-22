@@ -74,12 +74,6 @@ void initialize_particle_file(
     vars.push_back("longitude");
     vars.push_back("latitude");
 
-    #if DEBUG >= 1
-    vars.push_back("rev_longitude");
-    vars.push_back("rev_latitude");
-    vars.push_back("fore_back_dists");
-    #endif
-
     if (wRank == 0) {
         // Loop through and add the desired variables
         // Dimension names (in order!)

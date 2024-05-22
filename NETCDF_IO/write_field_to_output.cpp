@@ -84,7 +84,7 @@ void write_field_to_output(
 
     } else {
 
-        // Get the median value to let us use offsets
+        // Get the "middle" value to let us use offsets
         //      to do this, get min and max (first, MPI_local values)
         //      initalize with first element before looping over all values
         double  fmax_loc = 0,
@@ -151,7 +151,7 @@ void write_field_to_output(
             }
         }
 
-        // Otherwise, just write the 32-bit float field to the file
+        // And, at last, just write to the file.
         retval = nc_put_vara_double(ncid, field_varid, start, count, &(output_field[0]));
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 

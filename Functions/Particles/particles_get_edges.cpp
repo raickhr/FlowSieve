@@ -34,11 +34,13 @@ void particles_get_edges(
     }
         
     if ( ref_lat < lat_min ) {
-        bottom = -5;
+        // If we've gone outside of the lat bounds, then just use a nearest-neighbours
+        bottom =  0;
         top    =  0;
     } else if ( ref_lat > lat_max ) {
+        // If we've gone outside of the lat bounds, then just use a nearest-neighbours
         bottom = lat.size() - 1;
-        top    = -5;
+        top    = lat.size() - 1;
     } else {
         top = std::upper_bound( lat.begin(), lat.end(), ref_lat ) - lat.begin();
         if (top == 0) {
