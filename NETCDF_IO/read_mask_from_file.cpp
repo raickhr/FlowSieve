@@ -4,6 +4,7 @@
 #include "../functions.hpp"
 #include <cassert>
 #include <math.h>
+#include <fenv.h>
 
 /*!
  *  \brief Read a specific variable from a specific file.
@@ -46,19 +47,23 @@ void read_mask_from_file(
     //const int str_len = 250;
     int FLAG = NC_NETCDF4 | NC_MPIIO;
     int ncid=0, retval;
-    //char buffer [str_len];
-    //snprintf(buffer, str_len, filename.c_str());
 
     #if DEBUG >= 1
     if (wRank == 0) {
-        fprintf(stdout, "Attempting to read %s from %s\n", var_name.c_str(), buffer);
+        fprintf(stdout, "Attempting to read %s from %s\n", var_name.c_str(), filename.c_str());
         fflush(stdout);
     }
     #endif
 
-    //retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    // Some netcdf functions [in some netcdf versions] cause floating-point errors
+    //  so, we need to disable floating point exceptions when we try to open files.
+    fedisableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
     retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval != NC_NOERR ) { NC_ERR(retval, __LINE__, __FILE__); }
+
+    // Now we can restore fp-exception handling, after clearing out any that were raised
+    feclearexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // erase whatever exceptions were raised
+    feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // re-enable exceptions
 
     // Check if netcdf-4 format
     int input_nc_format;

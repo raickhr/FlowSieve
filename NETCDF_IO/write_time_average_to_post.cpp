@@ -2,6 +2,7 @@
 #include <string>
 #include <mpi.h>
 #include <math.h>
+#include <fenv.h>
 #include "../netcdf_io.hpp"
 #include "../constants.hpp"
 
@@ -24,13 +25,16 @@ void write_time_average_to_post(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_WRITE | NC_MPIIO;
     int ncid=0, retval;
-    //char buffer [50];
-    //snprintf(buffer, 50, filename);
 
-    //MPI_Barrier(comm);
-    //retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    // Some netcdf functions [in some netcdf versions] cause floating-point errors
+    //  so, we need to disable floating point exceptions when we try to open files.
+    fedisableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
     retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+    // Now we can restore fp-exception handling, after clearing out any that were raised
+    feclearexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // erase whatever exceptions were raised
+    feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // re-enable exceptions
 
     // Get the variable ID for the field
     int field_varid;
