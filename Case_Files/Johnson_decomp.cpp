@@ -125,6 +125,9 @@ int main(int argc, char *argv[]) {
     const std::string   &num_integration_steps_string  = input.getCmdOption("--integration_steps",  "-1", asked_help);
     // this value will be fixed a bit later
 
+    const std::string   &quad_step_factor_string  = input.getCmdOption("--Quadrature_step_factor",  "20", asked_help, "Ratio for number of quadrature steps. N * sqrt(ell / delta) where delta is grid spacing.");
+    const int   quad_step_factor  = stoi(quad_step_factor_string);
+
     if (asked_help) { return 0; }
 
     // Print processor assignments
@@ -201,7 +204,8 @@ int main(int argc, char *argv[]) {
     // Set the number of quadrature steps
     const int input_quad_steps = stoi(num_integration_steps_string);
     const double Delta = constants::R_earth * M_PI / Nlat;
-    int computed_steps = std::max( 20 * sqrt( filter_scale / Delta ), 11.);
+    //int computed_steps = std::max( quad_step_factor * sqrt( filter_scale / Delta ), 11.);
+    int computed_steps = std::max( quad_step_factor * log( filter_scale / Delta ), 21.);
 
     // This guarantees that the number of quadrature steps
     // 1) is odd (required for Kronrod quadrature)
@@ -790,6 +794,7 @@ int main(int argc, char *argv[]) {
         std::vector<const std::vector<double>*> postprocess_fields;
         std::vector<std::string> postprocess_names;
 
+        // Output the high-order results
         postprocess_fields.push_back( &divergent_strain_energy_kronrod );
         postprocess_fields.push_back( &traceless_strain_energy_kronrod );
         postprocess_fields.push_back( &cyclonic_energy_kronrod );
@@ -798,6 +803,17 @@ int main(int argc, char *argv[]) {
         postprocess_names.push_back( "traceless_strain_KE" );
         postprocess_names.push_back( "cyclonic_KE" );
         postprocess_names.push_back( "anticyclonic_KE" );
+
+        // Also output the lower-quadrature comparison 
+        //  for error testing
+        postprocess_fields.push_back( &divergent_strain_energy );
+        postprocess_fields.push_back( &traceless_strain_energy );
+        postprocess_fields.push_back( &cyclonic_energy );
+        postprocess_fields.push_back( &anticyclonic_energy );
+        postprocess_names.push_back( "divergent_strain_KE_QuadCompare" );
+        postprocess_names.push_back( "traceless_strain_KE_QuadCompare" );
+        postprocess_names.push_back( "cyclonic_KE_QuadCompare" );
+        postprocess_names.push_back( "anticyclonic_KE_QuadCompare" );
 
         MPI_Barrier(MPI_COMM_WORLD);
 
