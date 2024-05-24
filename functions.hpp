@@ -48,10 +48,12 @@ class dataset {
         std::vector<double> areas;
 
         // Boolean to indicate if we're computing u_r from incompressibility
-        bool compute_radial_vel    = false,
-             use_depth_derivatives = false,
-             depth_is_elevation    = false,
-             depth_is_increasing   = true;
+        bool compute_radial_vel     = false,
+             use_depth_derivatives  = false,
+             depth_is_elevation     = false,
+             depth_is_increasing    = true,
+             has_pressure           = false, // Do we have a pressure variable
+             has_density            = false; // Do we have a density variable
 
         // Dictionary for the variables (velocity components, density, etc)
         std::map< std::string , std::vector<double> > variables;
@@ -378,53 +380,6 @@ void compute_Z(
         const std::vector<double> & vort_uz,
         const MPI_Comm comm = MPI_COMM_WORLD);
 
-void compute_Lambda_rotational(
-        std::vector<double> & Lambda_rot,
-        const std::vector<double> & coarse_vort_r,
-        const std::vector<double> & coarse_vort_lon,
-        const std::vector<double> & coarse_vort_lat,
-        const std::vector<double> & coarse_rho,
-        const std::vector<double> & coarse_p,
-        const int Ntime, const int Ndepth, const int Nlat, const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask,
-        const double scale_factor
-        );
-
-
-void  compute_Lambda_full(
-        std::vector<double> & Lambda,
-        const std::vector<double> & coarse_u_r,
-        const std::vector<double> & coarse_u_lon,
-        const std::vector<double> & coarse_u_lat,
-        const std::vector<double> & tilde_u_r,
-        const std::vector<double> & tilde_u_lon,
-        const std::vector<double> & tilde_u_lat,
-        const std::vector<double> & coarse_p,
-        const int Ntime,
-        const int Ndepth,
-        const int Nlat,
-        const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask
-        );
-
-void compute_Lambda_nonlin_model(
-        std::vector<double> & Lambda_nonlin,
-        const std::vector<double> & coarse_u_r,
-        const std::vector<double> & coarse_u_lon,
-        const std::vector<double> & coarse_u_lat,
-        const std::vector<double> & coarse_rho,
-        const std::vector<double> & coarse_p,
-        const int Ntime, const int Ndepth, const int Nlat, const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask,
-        const double scale_factor
-        );
-
 double depotential_temperature( 
         const double p, 
         const double theta);
@@ -484,6 +439,32 @@ void compute_KE_spectra_and_slopes(
         const double filter_scale
         );
 
+
+// Baroclinic KE-PE conversions [Lambda]
+void compute_Lambda_rotational(
+    std::vector<double> & Lambda_rot,
+    const std::vector<double> & coarse_vort_r,
+    const std::vector<double> & coarse_vort_lon,
+    const std::vector<double> & coarse_vort_lat,
+    const std::vector<double> & coarse_rho,
+    const std::vector<double> & coarse_p,
+    const dataset & source_data,
+    const double scale_factor
+    );
+
+void compute_Lambda_nonlin_model(
+    std::vector<double> & Lambda_nonlin,
+    const std::vector<double> & coarse_u_r,
+    const std::vector<double> & coarse_u_lon,
+    const std::vector<double> & coarse_u_lat,
+    const std::vector<double> & coarse_rho,
+    const std::vector<double> & coarse_p,
+    const dataset & source_data,
+    const double scale_factor
+    );
+
+
+//
 void get_lat_bounds(
         int & LAT_lb,
         int & LAT_ub,

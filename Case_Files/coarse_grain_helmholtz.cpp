@@ -78,6 +78,14 @@ int main(int argc, char *argv[]) {
                                                                 "NONE",                         
                                                                 asked_help,
                                                                 "netCDF file containing radial/vertical velocity, if applicable. \nNONE if no radial velocity."),
+                        &pressure_input_fname = input.getCmdOption("--pressure_input_file", 
+                                                                "NONE",                         
+                                                                asked_help,
+                                                                "netCDF file containing pressure, if applicable. \nNONE if no pressure data."),
+                        &density_input_fname = input.getCmdOption("--density_input_file", 
+                                                                "NONE",                         
+                                                                asked_help,
+                                                                "netCDF file containing density, if applicable. \nNONE if no density data."),
                         &wind_input_fname  = constants::COMP_WIND_FORCE ?
                                                 input.getCmdOption("--wind_tau_input_file",        
                                                                    "wind_tau_projection.nc",       
@@ -138,6 +146,8 @@ int main(int argc, char *argv[]) {
                         &pot_field_var_name     = input.getCmdOption("--pot_field", "Phi",   asked_help, "Name of potential field (potential function) in input file."),
                         &vel_field_var_name     = input.getCmdOption("--vel_field", "u_lat", asked_help, "Name of a velocity field in input file (used to get land information)."),
                         &u_r_field_var_name     = input.getCmdOption("--u_r_field", "u_r",   asked_help, "Name of vertical/radial velocity field in input file (if used)."),
+                        &pressure_field_var_name= input.getCmdOption("--pressure_field", "pressure",  asked_help, "Name of pressure field in input file (if used)."),
+                        &density_field_var_name = input.getCmdOption("--density_field",  "density",   asked_help, "Name of density field in input file (if used)."),
                         &wind_tau_Psi_var_name  = constants::COMP_WIND_FORCE ? input.getCmdOption("--wind_tau_Psi",  "wind_tau_Psi", asked_help) : "",
                         &wind_tau_Phi_var_name  = constants::COMP_WIND_FORCE ? input.getCmdOption("--wind_tau_Phi",  "wind_tau_Phi", asked_help) : "",
                         &uiuj_F_r_var_name      = constants::COMP_PI_HELMHOLTZ ? input.getCmdOption("--uiuj_F_r",      "uiuj_F_r",     asked_help) : "",
@@ -235,6 +245,22 @@ int main(int argc, char *argv[]) {
     } else {
         source_data.load_variable( "u_r",  u_r_field_var_name, u_r_input_fname, false, true );
         source_data.compute_radial_vel = true;
+    }
+
+    // Read pressure, if relevant
+    if ( pressure_input_fname == "NONE" ) {
+        source_data.has_pressure = false;
+    } else {
+        source_data.load_variable( "pressure", pressure_field_var_name, pressure_input_fname, false, true );
+        source_data.has_pressure = true;
+    }
+
+    // Read density, if relevant
+    if ( density_input_fname == "NONE" ) {
+        source_data.has_density = false;
+    } else {
+        source_data.load_variable( "density", density_field_var_name, density_input_fname, false, true );
+        source_data.has_density = true;
     }
 
     // Read in the Helmholtz fields for uiuj

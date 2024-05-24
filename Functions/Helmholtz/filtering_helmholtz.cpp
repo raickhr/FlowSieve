@@ -57,6 +57,11 @@ void filtering_helmholtz(
     const std::vector<double>   &wind_tau_Psi = ( constants::COMP_WIND_FORCE ) ? source_data.variables.at("wind_tau_Psi") : zero_vector,
                                 &wind_tau_Phi = ( constants::COMP_WIND_FORCE ) ? source_data.variables.at("wind_tau_Phi") : zero_vector;
 
+    const std::vector<double> 
+        &pressure = ( source_data.has_pressure ) ? source_data.variables.at("pressure") : zero_vector,
+        &density = ( source_data.has_density ) ? source_data.variables.at("density") : zero_vector;
+
+
     const std::vector<bool> &mask = source_data.mask;
 
     const std::vector<int>  &myStarts = source_data.myStarts;
@@ -294,11 +299,20 @@ void filtering_helmholtz(
         Pi_VTT(  num_pts, 0. ),
         Pi_Helm( num_pts, 0. ),
 
+        // Pressure - density related: only allocate space if needed
+        coarse_pressure( source_data.has_pressure ? num_pts : 0, 0.),
+        coarse_density( source_data.has_density ? num_pts : 0, 0.),
+        Lambda_model_tor( (source_data.has_density and source_data.has_pressure) ? num_pts : 0, 0. ),
+        Lambda_model_pot( (source_data.has_density and source_data.has_pressure) ? num_pts : 0, 0. ),
+        Lambda_model_tot( (source_data.has_density and source_data.has_pressure) ? num_pts : 0, 0. ),
+        Lambda_rotational( (source_data.has_density and source_data.has_pressure) ? num_pts : 0, 0. ),
+
         // Z ( enstrophy cascade )
         Z_tor( num_pts, 0. ),
         Z_pot( num_pts, 0. ),
         Z_tot( num_pts, 0. );
 
+    // Wind-related variables (only allocate space if used)
     std::vector<double> tau_wind_x_tor( constants::COMP_WIND_FORCE ? num_pts : 1, 0. ),
                         tau_wind_y_tor( constants::COMP_WIND_FORCE ? num_pts : 1, 0. ),
                         tau_wind_x_pot( constants::COMP_WIND_FORCE ? num_pts : 1, 0. ),
@@ -434,6 +448,15 @@ void filtering_helmholtz(
             vars_to_write.push_back("coarse_uiuj_F_Psi");
         }
 
+        if ( source_data.has_pressure ) { vars_to_write.push_back("coarse_pressure"); }
+        if ( source_data.has_density ) { vars_to_write.push_back("coarse_density"); }
+        if ( source_data.has_pressure and source_data.has_density ) {
+            vars_to_write.push_back( "Lambda_model_tor" );
+            vars_to_write.push_back( "Lambda_model_pot" );
+            vars_to_write.push_back( "Lambda_model_tot" );
+            vars_to_write.push_back( "Lambda_rotational" );
+        }
+
         vars_to_write.push_back("u_lon_tor");
         vars_to_write.push_back("u_lat_tor");
 
@@ -560,6 +583,16 @@ void filtering_helmholtz(
     if ( source_data.compute_radial_vel ) {
         filter_fields.push_back(&u_r);
         filt_use_mask.push_back(false);
+    }
+
+    double pressure_tmp, rho_tmp;
+    if ( source_data.has_pressure ) { 
+        filter_fields.push_back(&pressure);
+        filt_use_mask.push_back(true);
+    }
+    if ( source_data.has_density ) { 
+        filter_fields.push_back(&density);
+        filt_use_mask.push_back(true);
     }
 
     double uiuj_F_r_tmp, uiuj_F_Phi_tmp, uiuj_F_Psi_tmp;
@@ -717,7 +750,32 @@ void filtering_helmholtz(
         postprocess_fields_tot.push_back( &coarse_tau_wind_dot_u_tot );
     }
 
-    
+    if ( source_data.has_pressure ) {
+        postprocess_names.push_back( "coarse_pressure" );
+        postprocess_fields_tor.push_back( &coarse_pressure );
+        postprocess_fields_pot.push_back( &coarse_pressure );
+        postprocess_fields_tot.push_back( &coarse_pressure );
+    }
+
+    if ( source_data.has_density ) {
+        postprocess_names.push_back( "coarse_density" );
+        postprocess_fields_tor.push_back( &coarse_density );
+        postprocess_fields_pot.push_back( &coarse_density );
+        postprocess_fields_tot.push_back( &coarse_density );
+    }
+
+    if ( source_data.has_pressure and source_data.has_density ) {
+        postprocess_names.push_back( "Lambda_model" );
+        postprocess_fields_tor.push_back( &Lambda_model_tor );
+        postprocess_fields_pot.push_back( &Lambda_model_pot );
+        postprocess_fields_tot.push_back( &Lambda_model_tot );
+
+        postprocess_names.push_back( "Lambda_rotational" );
+        postprocess_fields_tor.push_back( &Lambda_rotational );
+        postprocess_fields_pot.push_back( &zero_array );
+        postprocess_fields_tot.push_back( &Lambda_rotational );
+    }
+
 
     //
     //// Begin the main filtering loop
@@ -768,6 +826,8 @@ void filtering_helmholtz(
                 dl_coarse_Phi, dll_coarse_Phi, dl_coarse_Psi, dll_coarse_Psi, \
                 dl_coarse_u_r, dll_coarse_u_r, \
                 full_vort_tor_r, full_vort_pot_r, full_vort_tot_r, \
+                coarse_pressure, coarse_density, \
+                Lambda_model_tor, Lambda_model_pot, Lambda_model_tot, Lambda_rotational, \
                 u_x_tor, u_y_tor, u_z_tor, u_x_pot, u_y_pot, u_z_pot, u_x_tot, u_y_tot, u_z_tot, \
                 ux_ux_tor, ux_uy_tor, ux_uz_tor, uy_uy_tor, uy_uz_tor, uz_uz_tor,\
                 ux_ux_pot, ux_uy_pot, ux_uz_pot, uy_uy_pot, uy_uz_pot, uz_uz_pot,\
@@ -785,7 +845,7 @@ void filtering_helmholtz(
                 F_tor_tmp, F_pot_tmp, u_r_tmp, uxux_tmp, uxuy_tmp, uxuz_tmp, uyuy_tmp, uyuz_tmp, uzuz_tmp, \
                 vort_ux_tmp, vort_uy_tmp, vort_uz_tmp, LAT_lb, LAT_ub, thread_id, num_threads, \
                 filtered_vals, dl_filter_vals, dll_filter_vals, dl_kernel_val, dll_kernel_val, \
-                uiuj_F_r_tmp, uiuj_F_Phi_tmp, uiuj_F_Psi_tmp, \
+                uiuj_F_r_tmp, uiuj_F_Phi_tmp, uiuj_F_Psi_tmp, pressure_tmp, rho_tmp, \
                 dl_Psi_tmp, dll_Psi_tmp, dl_Phi_tmp, dll_Phi_tmp, dl_ur_tmp, dll_ur_tmp, \
                 wind_tau_Psi_tmp, wind_tau_Phi_tmp, tau_wind_dot_u_tor_tmp, tau_wind_dot_u_pot_tmp ) \
         firstprivate(perc, wRank, local_kernel, local_dl_kernel, local_dll_kernel, \
@@ -809,6 +869,20 @@ void filtering_helmholtz(
                 filtered_vals.push_back(&u_r_tmp);
                 dl_filter_vals.push_back( &dl_ur_tmp );
                 dll_filter_vals.push_back( &dll_ur_tmp );
+            }
+
+            // pressure
+            if ( source_data.has_pressure ) {
+                filtered_vals.push_back( &pressure_tmp );
+                dl_filter_vals.push_back( NULL );
+                dll_filter_vals.push_back( NULL );
+            }
+
+            // density
+            if ( source_data.has_density ) {
+                filtered_vals.push_back( &rho_tmp );
+                dl_filter_vals.push_back( NULL );
+                dll_filter_vals.push_back( NULL );
             }
             
             // uiuj
@@ -951,6 +1025,16 @@ void filtering_helmholtz(
                                 - 2 * (dl_ur_tmp - u_r_tmp) * pow( dl_kernel_val, 2 );
                         }
 
+                        // pressure
+                        if ( source_data.has_pressure ) {
+                            coarse_pressure.at(index) = pressure_tmp;
+                        }
+
+                        // density
+                        if ( source_data.has_density ) {
+                            coarse_density.at(index) = rho_tmp;
+                        }
+
                         if ( constants::COMP_PI_HELMHOLTZ ) {
                             coarse_uiuj_F_r.at(  index) = uiuj_F_r_tmp;
                             coarse_uiuj_F_Phi.at(index) = uiuj_F_Phi_tmp;
@@ -1062,6 +1146,10 @@ void filtering_helmholtz(
                 write_field_to_output(coarse_uiuj_F_Phi, "coarse_uiuj_F_Phi", starts, counts, fname, NULL);
                 write_field_to_output(coarse_uiuj_F_Psi, "coarse_uiuj_F_Psi", starts, counts, fname, NULL);
             }
+
+            write_field_to_output( coarse_pressure, "coarse_pressure", starts, counts, fname, NULL );
+            write_field_to_output( coarse_density, "coarse_density", starts, counts, fname, NULL );
+
             if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "writing");  }
         }
 
@@ -1200,7 +1288,17 @@ void filtering_helmholtz(
             // Enstrophy cascade (Z)
             compute_Z(  Z_tor, source_data, u_x_tor_coarse, u_y_tor_coarse, u_z_tor_coarse, 
                         vort_tor_r, vort_ux_tor, vort_uy_tor, vort_uz_tor );
-        if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "compute_Pi_and_Z"); }
+
+            // Lambda
+            if ( source_data.has_pressure and source_data.has_density ) {
+                compute_Lambda_nonlin_model( Lambda_model_tor, u_r_coarse, u_lon_tor, u_lat_tor, 
+                        coarse_density, coarse_pressure, source_data, 
+                        kern_alpha * pow(scale, 2.) / 3 );
+                compute_Lambda_rotational( Lambda_rotational, vort_tor_r, zero_array, zero_array,
+                        coarse_density, coarse_pressure, source_data,
+                        kern_alpha * pow(scale, 2.) / 3 );
+            }
+            if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "compute_Pi_and_Z"); }
 
         // Energy transport
         if (source_data.use_depth_derivatives and ( source_data.Nprocs_in_depth > 1 )) {
@@ -1243,6 +1341,13 @@ void filtering_helmholtz(
             // Enstrophy cascade (Z)
             compute_Z(  Z_pot, source_data, u_x_pot_coarse, u_y_pot_coarse, u_z_pot_coarse, 
                         vort_pot_r, vort_ux_pot, vort_uy_pot, vort_uz_pot );
+
+            // Lambda
+            if ( source_data.has_pressure and source_data.has_density ) {
+                compute_Lambda_nonlin_model( Lambda_model_pot, u_r_coarse, u_lon_pot, u_lat_pot, 
+                        coarse_density, coarse_pressure, source_data,
+                        kern_alpha * pow(scale, 2.) / 3 );
+            }
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "compute_Pi_and_Z"); }
 
         // Energy transport
@@ -1285,6 +1390,13 @@ void filtering_helmholtz(
             // Enstrophy cascade (Z)
             compute_Z(  Z_tot, source_data, u_x_tot_coarse, u_y_tot_coarse, u_z_tot_coarse, 
                         vort_tot_r, vort_ux_tot, vort_uy_tot, vort_uz_tot );
+
+            // Lambda
+            if ( source_data.has_pressure and source_data.has_density ) {
+                compute_Lambda_nonlin_model( Lambda_model_tot, u_r_coarse, u_lon_tot, u_lat_tot, 
+                        coarse_density, coarse_pressure, source_data,
+                        kern_alpha * pow(scale, 2.) / 3 );
+            }
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "compute_Pi_and_Z"); }
 
         // Energy transport
@@ -1367,6 +1479,20 @@ void filtering_helmholtz(
             write_field_to_output( Z_tor, "Z_tor", starts, counts, fname, &mask);
             write_field_to_output( Z_pot, "Z_pot", starts, counts, fname, &mask);
             write_field_to_output( Z_tot, "Z_tot", starts, counts, fname, &mask);
+
+
+            if ( source_data.has_pressure and source_data.has_density ) {
+                write_field_to_output( Lambda_model_tor, "Lambda_model_tor",
+                       starts, counts, fname, &mask );
+                write_field_to_output( Lambda_model_pot, "Lambda_model_pot",
+                       starts, counts, fname, &mask );
+                write_field_to_output( Lambda_model_tot, "Lambda_model_tot",
+                       starts, counts, fname, &mask );
+
+                write_field_to_output( Lambda_rotational, "Lambda_rotational",
+                       starts, counts, fname, &mask );
+            }
+
             if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "writing");  }
         }
 
