@@ -244,7 +244,11 @@ void RKF45_update( // Fehlbers's RK 4(5)
 
         // If the error was too large, then we'll need to redo the step with a smaller dt.
         // If the error was smaller than our tolerance, than the step is adaptively increased
-        dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+        if ( TE == 0 ) {
+            dt_tmp = dt_max;
+        } else {
+            dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+        }
 
         if (dt_tmp <= dt_min) { break; } // if we're at the smallest dt, just stop
     }
@@ -377,7 +381,11 @@ void DOPRI5_update( // Dormand-Prince 5(4)
 
         // If the error was too large, then we'll need to redo the step with a smaller dt.
         // If the error was smaller than our tolerance, than the step is adaptively increased
-        dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+        if ( TE == 0 ) {
+            dt_tmp = dt_max;
+        } else {
+            dt_tmp = std::fmax( std::fmin( 0.9 * dt * pow( eps / TE, 1./5 ), dt_max ), dt_min );
+        }
 
         if (dt_tmp <= dt_min) { break; } // if we're at the smallest dt, just stop
     }
