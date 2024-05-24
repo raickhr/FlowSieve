@@ -322,12 +322,25 @@ int main(int argc, char *argv[]) {
             extend_mask_to_poles( source_data.reference_mask, mask_data, extended_latitude, orig_lat_start_in_extend, false );
         }
 
+        //
+        //// Extend density and pressure if relevant
+        //
+        if ( source_data.has_pressure ) {
+            extend_field_to_poles( source_data.variables.at("pressure"), source_data, extended_latitude, orig_lat_start_in_extend );
+        }
+        if ( source_data.has_density ) {
+            extend_field_to_poles( source_data.variables.at("density"), source_data, extended_latitude, orig_lat_start_in_extend );
+        }
+
+
+
+
         // Extend out all of the region definitions
         mask_data.compute_cell_areas();
         mask_data.compute_region_areas();
 
         // Read in the region definitions and compute region areas
-        if ( check_file_existence( region_defs_fname ) ) {
+        if ( constants::APPLY_POSTPROCESS and check_file_existence( region_defs_fname ) ) {
             // If the file exists, then read in from that
             mask_data.load_region_definitions( region_defs_fname, region_defs_dim_name, region_defs_var_name );
         } else {
