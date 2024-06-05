@@ -29,10 +29,19 @@ void  compute_Lambda_nonlin_model(
     const std::vector<double> & coarse_rho,
     const std::vector<double> & coarse_p,
     const dataset & source_data,
-    const double scale_factor
+    const double scale_factor,
+    const MPI_Comm comm
     ) {
 
     const std::vector<bool> &mask = source_data.mask;
+
+    #if DEBUG >= 2
+    int wRank, wSize;
+    MPI_Comm_rank( comm, &wRank );
+    MPI_Comm_size( comm, &wSize );
+
+    if (wRank == 0) { fprintf(stdout, "  Starting Lambda_nonlin_model computation.\n"); }
+    #endif
 
     const int   Ntime   = source_data.Ntime,
                 Ndepth  = source_data.Ndepth,
@@ -65,7 +74,8 @@ void  compute_Lambda_nonlin_model(
             lon_factor, lat_factor, \
             drho_dlat, dp_dlat, dulon_dlat, dulat_dlat, \
             drho_dlon, dp_dlon, dulon_dlon, dulat_dlon, \
-            lat_deriv_vals, lon_deriv_vals)
+            lat_deriv_vals, lon_deriv_vals) \
+    firstprivate( Ntime, Ndepth, Nlat, Nlon, scale_factor )
     {
         lat_deriv_vals.push_back(&drho_dlat);
         lat_deriv_vals.push_back(&dp_dlat);
@@ -109,7 +119,11 @@ void  compute_Lambda_nonlin_model(
                         mask);
 
                 Lambda_nonlin.at(index) = 
-                    scale_factor
+                    ( coarse_rho.at(index) == 0 ) 
+                    ?
+                    0. //constants::fill_value
+                    :
+                    scale_factor * 1e4  // 1e4 is dbar to Pa conversion
                         * (    dp_dlon * drho_dlon * dulon_dlon / ( lon_factor * lon_factor * lon_factor )
                             +  dp_dlon * drho_dlat * dulon_dlat / ( lon_factor * lat_factor * lat_factor )
                             +  dp_dlat * drho_dlon * dulat_dlon / ( lat_factor * lon_factor * lon_factor )
@@ -123,5 +137,8 @@ void  compute_Lambda_nonlin_model(
             }  // end if(land) block
         } // end index loop
     } // end pragma block
+    #if DEBUG >= 2
+    if (wRank == 0) { fprintf(stdout, "     ... done.\n"); }
+    #endif
 } // end function
 

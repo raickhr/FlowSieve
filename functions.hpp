@@ -449,7 +449,8 @@ void compute_Lambda_rotational(
     const std::vector<double> & coarse_rho,
     const std::vector<double> & coarse_p,
     const dataset & source_data,
-    const double scale_factor
+    const double scale_factor,
+    const MPI_Comm comm = MPI_COMM_WORLD
     );
 
 void compute_Lambda_nonlin_model(
@@ -460,7 +461,8 @@ void compute_Lambda_nonlin_model(
     const std::vector<double> & coarse_rho,
     const std::vector<double> & coarse_p,
     const dataset & source_data,
-    const double scale_factor
+    const double scale_factor,
+    const MPI_Comm comm = MPI_COMM_WORLD
     );
 
 

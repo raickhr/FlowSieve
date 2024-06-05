@@ -28,10 +28,19 @@ void  compute_Lambda_rotational(
     const std::vector<double> & coarse_rho,
     const std::vector<double> & coarse_p,
     const dataset & source_data,
-    const double scale_factor
+    const double scale_factor,
+    const MPI_Comm comm
     ) {
 
     const std::vector<bool> &mask = source_data.mask;
+
+    #if DEBUG >= 2
+    int wRank, wSize;
+    MPI_Comm_rank( comm, &wRank );
+    MPI_Comm_size( comm, &wSize );
+
+    if (wRank == 0) { fprintf(stdout, "  Starting Lambda_nonlin_model computation.\n"); }
+    #endif
 
     const int   Ntime   = source_data.Ntime,
                 Ndepth  = source_data.Ndepth,
@@ -59,7 +68,8 @@ void  compute_Lambda_rotational(
             deriv_fields)\
     private(Itime, Idepth, Ilat, Ilon, index,\
             drhodlat, dpdlat, drhodlon, dpdlon, cos_lat,\
-            lat_deriv_vals, lon_deriv_vals)
+            lat_deriv_vals, lon_deriv_vals) \
+    firstprivate( Ntime, Ndepth, Nlat, Nlon, scale_factor )
     {
         lat_deriv_vals.push_back(&drhodlat);
         lat_deriv_vals.push_back(&dpdlat);
@@ -96,7 +106,11 @@ void  compute_Lambda_rotational(
                                     mask);
 
                             Lambda_rot.at(index) = 
-                                scale_factor
+                                ( coarse_rho.at(index) == 0 ) 
+                                ?
+                                0. //constants::fill_value
+                                :
+                                scale_factor * 1e4 // 1e4 is dbar to Pa
                                     * coarse_vort_r.at(index)
                                     * ( drhodlon * dpdlat  -  drhodlat * dpdlon ) 
                                     / ( 2 * coarse_rho.at(index) * R2 * cos_lat );
@@ -110,5 +124,8 @@ void  compute_Lambda_rotational(
             } // end lon loop
         } // end lat loop
     } // end pragma block
+    #if DEBUG >= 2
+    if (wRank == 0) { fprintf(stdout, "     ... done.\n"); }
+    #endif
 } // end function
 
