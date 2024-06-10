@@ -63,7 +63,7 @@ void  compute_Lambda_rotational(
 
     #pragma omp parallel \
     default(none) \
-    shared(mask, latitude, longitude,\
+    shared(mask, latitude, longitude, source_data, \
             coarse_rho, Lambda_rot, coarse_vort_r,\
             deriv_fields)\
     private(Itime, Idepth, Ilat, Ilon, index,\
@@ -94,15 +94,15 @@ void  compute_Lambda_rotational(
                             spher_derivative_at_point(
                                     lat_deriv_vals, deriv_fields,
                                     latitude, "lat",
+                                    source_data,
                                     Itime, Idepth, Ilat, Ilon,
-                                    Ntime, Ndepth, Nlat, Nlon,
                                     mask);
 
                             spher_derivative_at_point(
                                     lon_deriv_vals, deriv_fields,
                                     longitude, "lon",
+                                    source_data,
                                     Itime, Idepth, Ilat, Ilon,
-                                    Ntime, Ndepth, Nlat, Nlon,
                                     mask);
 
                             Lambda_rot.at(index) = 

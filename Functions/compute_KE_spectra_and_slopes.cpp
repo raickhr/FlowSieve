@@ -58,10 +58,8 @@ void compute_KE_spectra_and_slopes(
     //// first ell derivatives
     //
 
-    toroidal_vel_from_F( u_lon_tor_tmp, u_lat_tor_tmp, dl_coarse_Psi, 
-            longitude, latitude, Ntime, Ndepth, Nlat, Nlon, mask);
-    potential_vel_from_F( u_lon_pot_tmp, u_lat_pot_tmp, dl_coarse_Phi, 
-            longitude, latitude, Ntime, Ndepth, Nlat, Nlon, mask);
+    toroidal_vel_from_F(  u_lon_tor_tmp, u_lat_tor_tmp, dl_coarse_Psi, source_data, mask);
+    potential_vel_from_F( u_lon_pot_tmp, u_lat_pot_tmp, dl_coarse_Phi, source_data, mask);
 
     #pragma omp parallel \
     default( none ) \
@@ -110,10 +108,8 @@ void compute_KE_spectra_and_slopes(
     //// second ell derivatives
     //
 
-    toroidal_vel_from_F( u_lon_tor_tmp, u_lat_tor_tmp, dll_coarse_Psi, 
-            longitude, latitude, Ntime, Ndepth, Nlat, Nlon, mask);
-    potential_vel_from_F( u_lon_pot_tmp, u_lat_pot_tmp, dll_coarse_Phi, 
-            longitude, latitude, Ntime, Ndepth, Nlat, Nlon, mask);
+    toroidal_vel_from_F(  u_lon_tor_tmp, u_lat_tor_tmp, dll_coarse_Psi, source_data, mask);
+    potential_vel_from_F( u_lon_pot_tmp, u_lat_pot_tmp, dll_coarse_Phi, source_data, mask);
 
     double numer, denom;
 

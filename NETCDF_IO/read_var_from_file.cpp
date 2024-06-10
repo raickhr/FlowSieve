@@ -301,7 +301,6 @@ void read_var_from_file(
     
     // Determine masking, if desired
     double fill_val = 1e100;  // backup value
-    double var_max = -1e10, var_min = 1e10;
     #if DEBUG >= 1
     size_t num_land = 0, num_water = 0, num_unmasked = 0, num_zeros = 0;
     #endif
