@@ -7,13 +7,30 @@
 #include <vector>
 #include <omp.h>
 #include <math.h>
-#include <Eigen/Sparse>
-#include <Eigen/IterativeLinearSolvers>
-//#include <Eigen/SparseQR>
-//#include <Eigen/SPQRSupport>
+
+/*
+#include "../amgcl/amgcl/io/ios_saver.hpp"
+#include "../amgcl/amgcl/util.hpp"
+#include "../amgcl/amgcl/backend/builtin.hpp"
+#include "../amgcl/amgcl/make_solver.hpp"
+#include "../amgcl/amgcl/solver/bicgstab.hpp"
+#include "../amgcl/amgcl/amg.hpp"
+#include "../amgcl/amgcl/coarsening/smoothed_aggregation.hpp"
+#include "../amgcl/amgcl/relaxation/spai0.hpp"
+#include "../amgcl/amgcl/adapter/crs_tuple.hpp"
+*/
+#include "amgcl/io/ios_saver.hpp"
+#include "amgcl/util.hpp"
+#include "amgcl/backend/builtin.hpp"
+#include "amgcl/make_solver.hpp"
+#include "amgcl/solver/bicgstab.hpp"
+#include "amgcl/amg.hpp"
+#include "amgcl/coarsening/smoothed_aggregation.hpp"
+#include "amgcl/relaxation/spai0.hpp"
+#include "amgcl/adapter/crs_tuple.hpp"
 
 
-void Apply_LLC_Helmholtz_Projection_Eigen(
+void Apply_LLC_Helmholtz_Projection_AMGCL(
         const std::string output_fname,
         dataset & source_data,
         const std::vector<double> & seed_tor,
@@ -101,8 +118,9 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
 
     // alglib variables
     const size_t Nboxrows = ( Tikhov_Laplace > 0 ) ? 4 : 2;
+    num_land_points = 0; // need to have a square matrix
     std::vector<double> 
-        RHS_vector( Nboxrows * Npts + 4*num_land_points, 0. ),
+        RHS_vector( 2 * Npts, 0. ),
         Psi_seed(       Npts, 0. ),
         Phi_seed(       Npts, 0. ),
         work_arr(       Npts, 0. ),
@@ -172,10 +190,13 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
     double val;
     size_t column_skip, row_skip, land_counter = 0;
 
-    double *F_array;
-    Eigen::SparseMatrix<double> LHS_matr(Nboxrows*Npts + 4*num_land_points, 2*Npts);
-    LHS_matr.reserve(Eigen::VectorXi::Constant(2*Npts,18));
+    std::vector<size_t> vals_upto_row( 2*Npts+1, 0 ), 
+                        col_index( 2*Npts*(num_neighbours+1) );
+    std::vector<double> LHS( 2*Npts*(num_neighbours+1), 0. );
+
     for ( size_t Ipt = 0; Ipt < Npts; Ipt++ ) {
+        // Record how many values will occur before next row
+        vals_per_row[Ipt+1] = (Ipt+1) * (num_neighbours + 1) * 2;
 
         double  weight_val = weight_err ? dAreas.at(Ipt) : 1.,
                 cos_lat_inv = 1. / cos(latitude.at(Ipt)),
@@ -187,233 +208,84 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
                                     source_data.adjacency_indices.at(Ipt).at(Ineighbour) :
                                     Ipt;
 
+            size_t col_index_Psi = Ipt * (2*num_neighbours) + neighbour_ind;    // logical index for Psi
+            size_t col_index_Phi = col_index_Psi + num_neighbours;              // logical index for Phi
+
+            col_index[col_index_Psi] = neighbour_ind;           // the column index for the Psi coeff
+            col_index[col_index_Phi] = neighbour_ind + Npts;    // the column index for the Phi coeff
+
             bool is_pole = std::fabs( std::fabs( latitude.at(Ipt) * 180.0 / M_PI ) - 90 ) < 1e-6;
             if ( is_pole ) { fprintf(stdout, "SKIPPING POLE POINT!\n"); continue; }
 
-            if (not(mask.at(Ipt))) {
-                // Land doesn't always force zero velocity components. Sometimes it
-                // just forces the sum of the potential and toroidal to be zero.
-                // Here we force both of the potential and toroidal velocities
-                // to be zero individually.
+            //
+            //// Second LON derivative
+            //
+            val  = source_data.adjacency_d2dlon2_weights.at(Ipt).at(Ineighbour);
+            val *= weight_val * pow(cos_lat_inv * R_inv, 2.);
 
-                //
-                //// LON first derivative
-                //
-
-                val  = source_data.adjacency_ddlon_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * cos_lat_inv * R_inv;
-                //if (Tikhov_Laplace < 0) { val *= deriv_scale_factor; }
-                if (Tikhov_Laplace < 0) { val *= -Tikhov_Laplace; }
-
-                // Psi part
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = Nboxrows*Npts + 0*num_land_points + land_counter;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                // Phi part
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = Nboxrows*Npts + 1*num_land_points + land_counter;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
+            LHS[col_index_Psi] += val;
+            LHS[col_index_Phi] += val;
 
 
-                //
-                //// LAT first derivative
-                //
+            //
+            //// Second LAT derivative
+            //
+            val  = source_data.adjacency_d2dlat2_weights.at(Ipt).at(Ineighbour);
+            val *= weight_val * pow(R_inv, 2.);
 
-                val  = source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * R_inv;
-                //if (Tikhov_Laplace < 0) { val *= deriv_scale_factor; }
-                if (Tikhov_Laplace < 0) { val *= -Tikhov_Laplace; }
+            LHS[col_index_Psi] += val;
+            LHS[col_index_Phi] += val;
 
-                // Psi part
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = Nboxrows*Npts + 2*num_land_points + land_counter;
-                LHS_matr.coeffRef( row_skip, column_skip ) += -val;
+            //
+            //// LAT first derivative
+            //
+            val  = source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour);
+            val *= weight_val * pow(R_inv, 2.) * tan( latitude.at(Ipt) );
 
-                // Phi part
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = Nboxrows*Npts + 3*num_land_points + land_counter;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-            }
+            LHS[col_index_Psi] += -val;
+            LHS[col_index_Phi] += -val;
 
-            if (Tikhov_Laplace >= 0) {
-                //
-                //// LON first derivative
-                //
-
-                val  = source_data.adjacency_ddlon_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * cos_lat_inv * R_inv;
-
-                // Psi part
-                if (not(mask.at(Ipt))) {
-                    column_skip = 0 * Npts + neighbour_ind;
-                    //row_skip    = 0 * Npts + Ipt;
-                    row_skip    = 1 * Npts + Ipt;
-                } else {
-                    column_skip = 0 * Npts + neighbour_ind;
-                    row_skip    = 1 * Npts + Ipt;
-                }
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                // Phi part
-                if (not(mask.at(Ipt))) {
-                    column_skip = 1 * Npts + neighbour_ind;
-                    //row_skip    = 1 * Npts + Ipt;
-                    row_skip    = 0 * Npts + Ipt;
-                } else {
-                    column_skip = 1 * Npts + neighbour_ind;
-                    row_skip    = 0 * Npts + Ipt;
-                }
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-
-                //
-                //// LAT first derivative
-                //
-
-                val  = source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * R_inv;
-
-                // Psi part
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = 0 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += -val;
-
-                // Phi part
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = 1 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-            }
-
-
-            if (Tikhov_Laplace != 0) {
-
-                //
-                //// Second LON derivative
-                //
-                //  NOTE:   We're doing this as the first derivative of the first
-                //          derivative. Typically, this is not great, since it
-                //          tends to have a higher error. However, in our case
-                //          the broader stencil is helpful. It's also more internally
-                //          consistent since later we take derivs( vel ) = deriv( deriv ( Helm ) )
-
-                /*
-                for ( size_t D2_ind = 0; D2_ind < num_neighbours+1; D2_ind++ ) {
-                    val  =   source_data.adjacency_ddlon_weights.at(Ipt).at(Ineighbour)
-                           * source_data.adjacency_ddlon_weights.at(neighbour_ind).at(D2_ind);
-                    val *= weight_val * pow(R_inv, 2.) * cos_lat_inv / cos(latitude.at(neighbour_ind));
-                    if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
-
-                    column_skip = 0 * Npts + source_data.adjacency_indices.at(neighbour_ind).at(D2_ind);
-                    row_skip    = (Tikhov_Laplace > 0) ? 2 * Npts + Ipt : 0 * Npts + Ipt;
-                    LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                    column_skip = 1 * Npts + source_data.adjacency_indices.at(neighbour_ind).at(D2_ind);
-                    row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
-                    LHS_matr.coeffRef( row_skip, column_skip ) += val;
-                }
-                */
-
-                // Version using actual second derivative
-                val  = source_data.adjacency_d2dlon2_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * pow(cos_lat_inv * R_inv, 2.);
-                if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
-
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 2 * Npts + Ipt : 0 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-
-                //
-                //// Second LAT derivative
-                //
-                /*
-                for ( size_t D2_ind = 0; D2_ind < num_neighbours+1; D2_ind++ ) {
-                    val  =   source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour)
-                           * source_data.adjacency_ddlat_weights.at(neighbour_ind).at(D2_ind);
-                    val *= weight_val * pow(R_inv, 2.);
-                    if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
-
-                    column_skip = 0 * Npts + source_data.adjacency_indices.at(neighbour_ind).at(D2_ind);
-                    row_skip    = (Tikhov_Laplace > 0) ? 2 * Npts + Ipt : 0 * Npts + Ipt;
-                    LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                    column_skip = 1 * Npts + source_data.adjacency_indices.at(neighbour_ind).at(D2_ind);
-                    row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
-                    LHS_matr.coeffRef( row_skip, column_skip ) += val;
-                }
-                */
-
-                // Version using actual second derivative
-                val  = source_data.adjacency_d2dlat2_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * pow(R_inv, 2.);
-                if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
-
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 2 * Npts + Ipt : 0 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += val;
-
-                //
-                //// LAT first derivative
-                //
-                val  = source_data.adjacency_ddlat_weights.at(Ipt).at(Ineighbour);
-                val *= weight_val * pow(R_inv, 2.) * tan( latitude.at(Ipt) );
-                if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
-
-                // Psi part
-                column_skip = 0 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 2 * Npts + Ipt : 0 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += -val;
-
-                // Phi part
-                column_skip = 1 * Npts + neighbour_ind;
-                row_skip    = (Tikhov_Laplace > 0) ? 3 * Npts + Ipt : 1 * Npts + Ipt;
-                LHS_matr.coeffRef( row_skip, column_skip ) += -val;
-
-            }
-
-        }
-        if (not(mask.at(Ipt))) {
-            // Increment land counter
-            land_counter++;
         }
     }
-    fprintf(stdout, "  Land counter: %'zu\n", land_counter);
 
+
+    //
+    //// Set up the backend
+    //
     #if DEBUG >= 1
     if (wRank == 0) {
-        fprintf(stdout, "Declaring the least squares problem and computing.\n");
+        fprintf(stdout, "Declaring the Backend\n");
         fflush(stdout);
     }
     #endif
 
-    LHS_matr.makeCompressed();
-    Eigen::LeastSquaresConjugateGradient< Eigen::SparseMatrix<double> > solver;
-    solver.setMaxIterations(max_iters);
-    solver.setTolerance(rel_tol);
-    solver.compute( LHS_matr );
-    if ( solver.info() != Eigen::Success ) {
-        // decomposition failed
-        fprintf( stderr, "!!Eigen decomposition failed.\n" );
-        return -1;
+    typedef amgcl::backend::builtin<double> Backend; // this should use OpenMP
+
+
+    //
+    //// Building the solver
+    //
+    #if DEBUG >= 1
+    if (wRank == 0) {
+        fprintf(stdout, "Building the solver\n");
+        fflush(stdout);
     }
+    #endif
+    typedef amgcl::make_solver<
+        // Use AMG as preconditioner:
+        amgcl::amg<
+            Backend,
+            amgcl::coarsening::smoothed_aggregation,
+            amgcl::relaxation::spai0
+            >,
+        // And BiCGStab as iterative solver:
+        amgcl::solver::bicgstab<Backend>
+    > Solver;
 
-    // Counters to track termination types
-    int terminate_count_abs_tol = 0,
-        terminate_count_rel_tol = 0,
-        terminate_count_max_iter = 0,
-        terminate_count_rounding = 0,
-        terminate_count_other = 0;
+    Solver solve( std::tie(2*Npts, vals_upto_row, col_index, LHS) );
 
-    // Now do the solve!
+
+    // Build the RHS
     for (int Itime = 0; Itime < Ntime; ++Itime) {
         for (int Idepth = 0; Idepth < Ndepth; ++Idepth) {
 
@@ -494,104 +366,33 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
 
                     is_pole = std::fabs( std::fabs( latitude.at(index_sub) * 180.0 / M_PI ) - 90 ) < 1e-6;
 
-                    if (Tikhov_Laplace >= 0) {
-                        RHS_vector.at( 0*Npts + index_sub) = u_lon_rem.at(index_sub);
-                        RHS_vector.at( 1*Npts + index_sub) = u_lat_rem.at(index_sub);
-                    }
-
-                    if (Tikhov_Laplace > 0) {
-                        if ( is_pole ) {
-                            fprintf(stdout, "SKIPPING POLE\n");
-                            RHS_vector.at( 2*Npts + index_sub) = 0.;
-                            RHS_vector.at( 3*Npts + index_sub) = 0.;
-                        } else {
-                            RHS_vector.at( 2*Npts + index_sub) = vort_term.at(index_sub) * Tikhov_Laplace / deriv_scale_factor;
-                            RHS_vector.at( 3*Npts + index_sub) = div_term.at( index_sub) * Tikhov_Laplace / deriv_scale_factor;
-                        }
-                    } else if (Tikhov_Laplace < 0) {
-                        RHS_vector.at( 0*Npts + index_sub) = vort_term.at(index_sub);
-                        RHS_vector.at( 1*Npts + index_sub) = div_term.at( index_sub);
-                    }
+                    RHS_vector.at( 0*Npts + index_sub) = vort_term.at(index_sub);
+                    RHS_vector.at( 1*Npts + index_sub) = div_term.at( index_sub);
 
                     if ( weight_err ) {
                         RHS_vector.at( 0*Npts + index_sub) *= dAreas.at(index_sub);
                         RHS_vector.at( 1*Npts + index_sub) *= dAreas.at(index_sub);
-                        if (Tikhov_Laplace > 0) {
-                            RHS_vector.at( 2*Npts + index_sub) *= dAreas.at(index_sub);
-                            RHS_vector.at( 3*Npts + index_sub) *= dAreas.at(index_sub);
-                        }
                     }
                 }
             }
 
-            fprintf( stdout, "Also adding the seed info over land, %zu\n", Nboxrows );
-            land_counter = 0;
-            for (index_sub = 0; index_sub < Npts; ++index_sub) {
-                if (not(mask.at(index_sub))) {
-                    double weight_val = weight_err ? dAreas.at(index_sub) : 1.;
-
-                    row_skip    = Nboxrows*Npts + 0*num_land_points + land_counter;
-                    //RHS_vector.at( row_skip ) = -dPsi_dlon;
-                    RHS_vector.at( row_skip ) = -u_lat_tor_seed[index_sub] * weight_val;
-
-                    row_skip    = Nboxrows*Npts + 1*num_land_points + land_counter;
-                    //RHS_vector.at( row_skip ) = -dPhi_dlon;
-                    RHS_vector.at( row_skip ) = -u_lon_pot_seed[index_sub] * weight_val;
-
-                    row_skip    = Nboxrows*Npts + 2*num_land_points + land_counter;
-                    //RHS_vector.at( row_skip ) = -dPsi_dlat;
-                    RHS_vector.at( row_skip ) = -u_lon_tor_seed[index_sub] * weight_val;
-
-                    row_skip    = Nboxrows*Npts + 3*num_land_points + land_counter;
-                    //RHS_vector.at( row_skip ) = -dPhi_dlat;
-                    RHS_vector.at( row_skip ) = -u_lat_pot_seed[index_sub] * weight_val;
-
-                    land_counter++;
-                }
-            }
-            fprintf( stdout, "%zu land points\n", land_counter );
-            Eigen::VectorXd RHS   = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(RHS_vector.data(), RHS_vector.size());
-            //Eigen::VectorXd Guess = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(RHS_vector.data(), RHS_vector.size());
 
             //
-            //// Now apply the least-squares solver
+            //// Apply the AMG Solver
             //
-            #if DEBUG >= 2
-            if ( wRank == 0 ) {
-                fprintf(stdout, "Solving the least squares problem.\n");
-                fflush(stdout);
-            }
-            #endif
-            /*
-            Eigen::SparseQR< Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> > solver;
-            //Eigen::SPQR< Eigen::SparseMatrix<double> > solver;
-            solver.compute( LHS_matr );
-            if ( solver.info() != Eigen::Success ) {
-                // decomposition failed
-                fprintf( stderr, "Eigen decomposition failed.\n" );
-                return;
-            }
-            */
+            std::vector<double> AMG_soln(2*Npts, 0.0);
+            int    iters;
+            double error;
+            std::tie(iters, error) = solve(RHS_vector, AMG_soln);
 
-            Eigen::VectorXd F_Eigen = solver.solve( RHS );
-            /*
-            if ( solver.info() != Eigen::Success ) {
-                // solving failed
-                fprintf( stderr, "Eigen solving failed.\n" );
-                return;
+            fprintf( stdout, "Solver converged after %d iterations with an error of %g.\n", iters, error );
+            fflush( stdout );
+
             }
-            */
-            #if DEBUG >= 2
-            if ( wRank == 0 ) {
-                fprintf( stdout, "    Solver converged after %ld iterations to error %g.\n", 
-                        solver.iterations(), solver.error() );
-                fflush(stdout);
-            }
-            #endif
 
             // Extract the solution and add the seed back in
-            std::vector<double> Psi_vector(F_Eigen.data(),        F_Eigen.data() +     Npts),
-                                Phi_vector(F_Eigen.data() + Npts, F_Eigen.data() + 2 * Npts);
+            std::vector<double> Psi_vector( AMG_soln.data(),        AMG_soln.data() +     Npts),
+                                Phi_vector( AMG_soln.data() + Npts, AMG_soln.data() + 2 * Npts);
             for (size_t ii = 0; ii < Npts; ++ii) {
                 Psi_vector.at(ii) += Psi_seed.at(ii);
                 Phi_vector.at(ii) += Phi_seed.at(ii);
@@ -673,31 +474,6 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
         }
         #endif
     }
-
-    //
-    //// Print termination counts
-    //
-
-    int total_count_abs_tol, total_count_rel_tol, total_count_max_iter, total_count_rounding, total_count_other;
-
-    MPI_Reduce( &terminate_count_abs_tol,  &total_count_abs_tol,  1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
-    MPI_Reduce( &terminate_count_rel_tol,  &total_count_rel_tol,  1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
-    MPI_Reduce( &terminate_count_max_iter, &total_count_max_iter, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
-    MPI_Reduce( &terminate_count_rounding, &total_count_rounding, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
-    MPI_Reduce( &terminate_count_other,    &total_count_other,    1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
-
-    #if DEBUG >= 0
-    if (wRank == 0) {
-        fprintf( stdout, "\n" );
-        fprintf( stdout, "Termination counts: %'d from absolute tolerance\n", total_count_abs_tol );
-        fprintf( stdout, "                    %'d from relative tolerance\n", total_count_rel_tol );
-        fprintf( stdout, "                    %'d from iteration maximum\n", total_count_max_iter );
-        fprintf( stdout, "                    %'d from rounding errors \n", total_count_rounding );
-        fprintf( stdout, "                    %'d from other causes \n", total_count_other );
-        fprintf( stdout, "\n" );
-    }
-    #endif
-
 
     //
     //// Write the output

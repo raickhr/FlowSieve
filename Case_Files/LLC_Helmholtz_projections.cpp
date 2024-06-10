@@ -136,6 +136,9 @@ int main(int argc, char *argv[]) {
     const std::string &Tikhov_Lap_string = input.getCmdOption("--Tikhov_Laplace", "1.", asked_help);
     const double Tikhov_Laplace = stod(Tikhov_Lap_string);  
 
+    const std::string &filter_scale_string = input.getCmdOption("--filter_scale", "-1", asked_help);
+    const double filter_scale = stod(filter_scale_string);  
+
     const std::string &use_mask_string = input.getCmdOption("--use_mask", 
                                                             "false", 
                                                             asked_help,
@@ -229,8 +232,10 @@ int main(int argc, char *argv[]) {
     }
 
     // Apply to projection routine
-    Apply_LLC_Helmholtz_Projection( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
-            tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace );
+    //Apply_LLC_Helmholtz_Projection( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
+    //        tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace, filter_scale );
+    Apply_LLC_Helmholtz_Projection_AMGCL( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
+            tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace, filter_scale );
     //Apply_LLC_Helmholtz_Projection_Eigen( output_fname, source_data, Psi_seed, Phi_seed, single_seed, 
     //        tolerance, max_iterations, use_area_weight, use_mask, Tikhov_Laplace );
 

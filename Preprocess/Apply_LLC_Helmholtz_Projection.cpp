@@ -8,9 +8,166 @@
 #include <omp.h>
 #include <math.h>
 #include <cassert>
+#include <deque>
 #include "../ALGLIB/stdafx.h"
 #include "../ALGLIB/linalg.h"
 #include "../ALGLIB/solvers.h"
+
+
+void LLC_filter_scalar( 
+       std::vector<double> & coarse_div,
+       std::vector<double> & coarse_vort,
+       const std::vector<double> & div,
+       const std::vector<double> & vort,
+       dataset & source_data,
+       const double filter_scale
+        ) {
+
+    const std::vector<double>   &latitude   = source_data.latitude,
+                                &longitude  = source_data.longitude;
+
+    const size_t num_pts = div.size(),
+                 Nlatlon = latitude.size(),
+                 num_neighbours = source_data.num_neighbours;
+
+    const std::vector<int>  &myCounts = source_data.myCounts;
+    const int   Ntime   = myCounts.at(0),
+                Ndepth  = myCounts.at(1);
+
+    // Filter-loop variables
+    size_t target_index, search_index, neighbour_index;
+    double target_lat, target_lon, kern_val, dArea, local_val, kernel_normalization,
+           local_lat, local_lon, local_dist,
+           vort_bar_tmp, div_bar_tmp;
+    int Itime, Idepth;
+    
+    std::deque<size_t> points_to_test;
+    std::vector<bool>   was_rejected(num_pts, false), 
+                        was_accepted(num_pts, false), 
+                        planned_for_testing(num_pts, false);
+
+    size_t pts_used, num_singletons=0;
+
+    fprintf( stdout, "Beginning spatial filtering.\n" );
+
+    #pragma omp parallel \
+    default(none) \
+    shared( source_data, coarse_div, coarse_vort, div, vort, stdout ) \
+    private( vort_bar_tmp, div_bar_tmp, Itime, Idepth, \
+             target_index, search_index, neighbour_index, kern_val, dArea, local_val, \
+             was_rejected, was_accepted, planned_for_testing, points_to_test, \
+             target_lat, target_lon, kernel_normalization, \
+             local_lat, local_lon, local_dist, pts_used ) \
+    firstprivate( num_pts, num_neighbours, Nlatlon, Ndepth, Ntime, filter_scale ) \
+    reduction( +:num_singletons )
+    {
+
+        was_rejected.resize( num_pts );
+        was_accepted.resize( num_pts );
+        planned_for_testing.resize( num_pts );
+
+        #pragma omp for collapse(1) schedule(dynamic)
+        for ( target_index = 0; target_index < Nlatlon; target_index++) {
+
+            std::fill(was_rejected.begin(), was_rejected.end(), false);
+            std::fill(was_accepted.begin(), was_accepted.end(), false);
+            std::fill(planned_for_testing.begin(), planned_for_testing.end(), false);
+
+            target_lat = source_data.latitude.at(  target_index );
+            target_lon = source_data.longitude.at( target_index );
+
+            pts_used = 0;
+
+            kernel_normalization = 0.0;
+            dArea = source_data.areas.at(target_index);
+            kernel_normalization += 1. * dArea;
+
+            // Intialize values
+            vort_bar_tmp = vort.at(target_index) * dArea;
+            div_bar_tmp = div.at(target_index) * dArea;
+
+            // Next, seed the 'points to test' with the adjacent points
+            points_to_test.clear();
+            for (neighbour_index = 0; neighbour_index < num_neighbours; neighbour_index++ ) {
+                points_to_test.push_back( source_data.adjacency_indices.at(target_index)[neighbour_index] );
+                planned_for_testing[ source_data.adjacency_indices.at(target_index)[neighbour_index] ] = true;
+            }
+
+            // So long as we still have points to test, keep testing!
+            // This implements a breadth-first search through the adjacency matrix to build
+            //      filtering kernel. If a point is within distance, add it to the kernel,
+            //      and then test it's neighbours. If those are in, test their neighbours,
+            //      and so on. If a point is too far away, we do not test it's neighbours.
+            // This then assumes that for any point X within distance L of Y, that there
+            //      is an adjacency path from Y to X strictly using points within distance
+            //      L of Y.
+            // Along the way, test for double inclusing to make sure that we don't test 
+            //      points repeatedly etc.
+            while ( points_to_test.size() > 0 ) {
+
+                // Pull out the most-recently-added point, and remove it from the 'to test' list,
+                // since we're testing it now.
+                // Since we're pulling out the most-recently-added, that effectively makes this a
+                // depth-first search to build the kernel.
+                search_index = points_to_test.front();
+                points_to_test.pop_front();
+                planned_for_testing[ search_index ] = false;
+
+                local_lat = source_data.latitude.at(  search_index );
+                local_lon = source_data.longitude.at( search_index );
+                local_dist = distance( target_lon, target_lat, local_lon, local_lat );
+
+                kern_val = kernel( local_dist, filter_scale );
+
+                if ( ( kern_val > 1e-10 ) or ( local_dist <= 0.5 * filter_scale )  ) {
+                    was_accepted[search_index] = true;
+
+                    // Accumulate the coarse values
+                    dArea = source_data.areas.at(search_index);
+                    kernel_normalization += kern_val * dArea;
+                    vort_bar_tmp += vort.at(search_index) * kern_val * dArea;
+                    div_bar_tmp  += div.at( search_index) * kern_val * dArea;
+
+                    pts_used++;
+
+                    // Since this point is in the kernel
+                    // add its neighbours to the 'to search' list
+                    for ( int ii = 0; ii < num_neighbours; ii++ ) {
+                        neighbour_index = source_data.adjacency_indices.at(search_index)[ii];
+
+                        // but first check if that neighbour has been rejected already
+                        if ( was_rejected[neighbour_index] ) { continue; }
+
+                        // then check if that neighbour is already accepted
+                        if ( was_accepted[neighbour_index] ) { continue; }
+
+                        // then check if that neighbour is already on the search list
+                        if ( planned_for_testing[neighbour_index] ) { continue; }
+
+                        // if it's not on any of those list already
+                        // then add it to the 'points to test'
+                        points_to_test.push_back( neighbour_index );
+                        planned_for_testing[neighbour_index] = true;
+
+                    }
+                } else {
+                    // Otherwise, record this point as rejected, and move on
+                    was_rejected[search_index] = true;
+                }
+
+            } // loop through to make the kernel
+
+            if (pts_used == 1) { num_singletons++; }
+
+            // Store the filtered values in the appropriate arrays
+            coarse_div.at( target_index) =  div_bar_tmp / kernel_normalization;
+            coarse_vort.at(target_index) = vort_bar_tmp / kernel_normalization;
+        }
+    }
+
+    fprintf( stdout, "%'zu points had singleton kernels\n", num_singletons );
+}
+
 
 void Apply_LLC_Helmholtz_Projection(
         const std::string output_fname,
@@ -23,6 +180,7 @@ void Apply_LLC_Helmholtz_Projection(
         const bool weight_err,
         const bool use_mask,
         const double Tikhov_Laplace,
+        const double filter_scale,
         const MPI_Comm comm
         ) {
 
@@ -323,8 +481,8 @@ void Apply_LLC_Helmholtz_Projection(
                     alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
                 }
 
-                // Version using actual second derivative
                 /*
+                // Version using actual second derivative
                 val  = source_data.adjacency_d2dlon2_weights.at(Ipt).at(Ineighbour);
                 val *= weight_val * pow(cos_lat_inv * R_inv, 2.);
                 if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
@@ -357,8 +515,8 @@ void Apply_LLC_Helmholtz_Projection(
                     alglib::sparseadd( LHS_matr, row_skip, column_skip, val );
                 }
 
-                // Version using actual second derivative
                 /*
+                // Version using actual second derivative
                 val  = source_data.adjacency_d2dlat2_weights.at(Ipt).at(Ineighbour);
                 val *= weight_val * pow(R_inv, 2.);
                 if (Tikhov_Laplace > 0) { val *= Tikhov_Laplace / deriv_scale_factor; }
@@ -474,6 +632,86 @@ void Apply_LLC_Helmholtz_Projection(
             #endif
             toroidal_vel_div(        div_term, u_lon_rem, u_lat_rem, source_data, use_mask ? mask : unmask );
             toroidal_curl_u_dot_er( vort_term, u_lon_rem, u_lat_rem, source_data, use_mask ? mask : unmask );
+
+            double vort_min = vort_term[0], vort_max = vort_term[0], div_min = div_term[0], div_max = div_term[0];
+            #pragma omp parallel default(none) \
+            shared( div_term, vort_term ) \
+            private( index ) \
+            firstprivate( Npts ) \
+            reduction( min:vort_min,div_min ) \
+            reduction( max:vort_max,div_max )
+            {
+                #pragma omp for schedule(static)
+                for ( index = 0; index < Npts; index++ )  {
+                    vort_min = std::fmin( vort_min, vort_term[index] );
+                    vort_max = std::fmax( vort_max, vort_term[index] );
+
+                    div_min = std::fmin( div_min, div_term[index] );
+                    div_max = std::fmax( div_max, div_term[index] );
+                }
+            }
+            fprintf( stdout, "min,max vort( %g, %g ), div( %g, %g )\n", vort_min, vort_max, div_min, div_max );
+
+            //
+            //// If requested, filter divergence and vorticity first as scalars
+            //
+            //if (filter_scale > 0) {
+                fprintf( stdout, "Entering filtering block. Filter scale is %g km\n", filter_scale / 1e3 );
+                std::vector<double> coarse_div( div_term.size(), 0. ),
+                                    coarse_vort( vort_term.size(), 0. );
+                LLC_filter_scalar( coarse_div, coarse_vort, div_term, vort_term, source_data, filter_scale );
+
+                div_term = coarse_div;
+                vort_term = coarse_vort;
+
+                /*
+                coarse_div.swap( div_term );
+                coarse_vort.swap( vort_term );
+
+                coarse_div.clear();
+                coarse_vort.clear();
+                */
+            //}
+
+            vort_min = vort_term[0], vort_max = vort_term[0], div_min = div_term[0], div_max = div_term[0];
+            #pragma omp parallel default(none) \
+            shared( div_term, vort_term ) \
+            private( index ) \
+            firstprivate( Npts ) \
+            reduction( min:vort_min,div_min ) \
+            reduction( max:vort_max,div_max )
+            {
+                #pragma omp for schedule(static)
+                for ( index = 0; index < Npts; index++ )  {
+                    vort_min = std::fmin( vort_min, vort_term[index] );
+                    vort_max = std::fmax( vort_max, vort_term[index] );
+
+                    div_min = std::fmin( div_min, div_term[index] );
+                    div_max = std::fmax( div_max, div_term[index] );
+                }
+            }
+            fprintf( stdout, "min,max vort( %g, %g ), div( %g, %g )\n", vort_min, vort_max, div_min, div_max );
+
+            vort_min = coarse_vort[0], vort_max = coarse_vort[0], div_min = coarse_div[0], div_max = coarse_div[0];
+            #pragma omp parallel default(none) \
+            shared( coarse_vort, coarse_div ) \
+            private( index ) \
+            firstprivate( Npts ) \
+            reduction( min:vort_min,div_min ) \
+            reduction( max:vort_max,div_max )
+            {
+                #pragma omp for schedule(static)
+                for ( index = 0; index < Npts; index++ )  {
+                    vort_min = std::fmin( vort_min, coarse_vort[index] );
+                    vort_max = std::fmax( vort_max, coarse_vort[index] );
+
+                    div_min = std::fmin( div_min, coarse_div[index] );
+                    div_max = std::fmax( div_max, coarse_div[index] );
+                }
+            }
+            fprintf( stdout, "min,max vort_bar( %g, %g ), div_bar( %g, %g )\n", vort_min, vort_max, div_min, div_max );
+
+            // end filtering block
 
             #if DEBUG >= 2
             if ( wRank == 0 ) {
@@ -740,6 +978,12 @@ void Apply_LLC_Helmholtz_Projection(
 
         vars_to_write.push_back("u_lon_pot");
         vars_to_write.push_back("u_lat_pot");
+
+        vars_to_write.push_back("vorticity");
+        vars_to_write.push_back("divergence");
+
+        vars_to_write.push_back("proj_vorticity");
+        vars_to_write.push_back("proj_divergence");
     }
 
     vars_to_write.push_back("Psi");
@@ -753,6 +997,15 @@ void Apply_LLC_Helmholtz_Projection(
 
         write_field_to_output(full_u_lon_pot,  "u_lon_pot",  starts, counts, output_fname.c_str(), &unmask);
         write_field_to_output(full_u_lat_pot,  "u_lat_pot",  starts, counts, output_fname.c_str(), &unmask);
+
+        write_field_to_output(vort_term,  "vorticity",  starts, counts, output_fname.c_str(), &unmask);
+        write_field_to_output(div_term,   "divergence", starts, counts, output_fname.c_str(), &unmask);
+
+        toroidal_vel_div(        div_term, full_u_lon_pot, full_u_lat_pot, source_data, use_mask ? mask : unmask );
+        toroidal_curl_u_dot_er( vort_term, full_u_lon_tor, full_u_lat_tor, source_data, use_mask ? mask : unmask );
+
+        write_field_to_output(vort_term,  "proj_vorticity",  starts, counts, output_fname.c_str(), &unmask);
+        write_field_to_output(div_term,   "proj_divergence", starts, counts, output_fname.c_str(), &unmask);
     }
 
     write_field_to_output(full_Psi, "Psi", starts, counts, output_fname.c_str(), &unmask);
