@@ -8,7 +8,8 @@
 #include <omp.h>
 #include <math.h>
 #include <Eigen/Sparse>
-#include <Eigen/SparseQR>
+#include <Eigen/IterativeLinearSolvers>
+//#include <Eigen/SparseQR>
 //#include <Eigen/SPQRSupport>
 
 
@@ -387,14 +388,23 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
     }
     fprintf(stdout, "  Land counter: %'zu\n", land_counter);
 
-    LHS_matr.makeCompressed();
-
     #if DEBUG >= 1
     if (wRank == 0) {
-        fprintf(stdout, "Declaring the least squares problem.\n");
+        fprintf(stdout, "Declaring the least squares problem and computing.\n");
         fflush(stdout);
     }
     #endif
+
+    LHS_matr.makeCompressed();
+    Eigen::LeastSquaresConjugateGradient< Eigen::SparseMatrix<double> > solver;
+    solver.setMaxIterations(max_iters);
+    solver.setTolerance(rel_tol);
+    solver.compute( LHS_matr );
+    if ( solver.info() != Eigen::Success ) {
+        // decomposition failed
+        fprintf( stderr, "!!Eigen decomposition failed.\n" );
+        return -1;
+    }
 
     // Counters to track termination types
     int terminate_count_abs_tol = 0,
@@ -552,6 +562,7 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
                 fflush(stdout);
             }
             #endif
+            /*
             Eigen::SparseQR< Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> > solver;
             //Eigen::SPQR< Eigen::SparseMatrix<double> > solver;
             solver.compute( LHS_matr );
@@ -560,17 +571,20 @@ void Apply_LLC_Helmholtz_Projection_Eigen(
                 fprintf( stderr, "Eigen decomposition failed.\n" );
                 return;
             }
+            */
 
             Eigen::VectorXd F_Eigen = solver.solve( RHS );
+            /*
             if ( solver.info() != Eigen::Success ) {
                 // solving failed
                 fprintf( stderr, "Eigen solving failed.\n" );
                 return;
             }
-
+            */
             #if DEBUG >= 2
             if ( wRank == 0 ) {
-                fprintf(stdout, " Done solving the least squares problem.\n");
+                fprintf( stdout, "    Solver converged after %ld iterations to error %g.\n", 
+                        solver.iterations(), solver.error() );
                 fflush(stdout);
             }
             #endif
