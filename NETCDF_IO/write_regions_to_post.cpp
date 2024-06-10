@@ -7,7 +7,8 @@
 #include "../postprocess.hpp"
 
 void write_regions_to_post(
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const std::vector< std::string > & region_names,
         const MPI_Comm comm
         ) {
@@ -24,10 +25,11 @@ void write_regions_to_post(
         // Open the NETCDF file
         int FLAG = NC_NETCDF4 | NC_WRITE;
         int ncid=0, retval;
-        char buffer [50];
-        snprintf(buffer, 50, filename);
+        //char buffer [50];
+        //snprintf(buffer, 50, filename);
 
-        retval = nc_open(buffer, FLAG, &ncid);
+        //retval = nc_open(buffer, FLAG, &ncid);
+        retval = nc_open( filename.c_str(), FLAG, &ncid);
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
         // Get the variable ID for the field
@@ -42,18 +44,17 @@ void write_regions_to_post(
         //    that netcdf seems to want.
         // We're also going to have to go through and write them
         //    one at a time. Woo.
-        char curr_name[50];
-        const char *ptr_to_name = &curr_name[0];
 
         size_t start[1], count[1];
         count[0] = 1;
         for (size_t Iregion = 0; Iregion < num_regions; ++Iregion) {
             start[0] = Iregion;
 
-            sprintf(curr_name, "%20s", region_names.at(Iregion).c_str());
+            const char* ptr_to_name = &(region_names.at(Iregion).c_str()[0]);
 
             retval = nc_put_vara_string(ncid, region_varid, start, count, &ptr_to_name);
             if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
         }
 
         // Close the file
@@ -61,7 +62,7 @@ void write_regions_to_post(
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
         #if DEBUG >= 1
-        if (wRank == 0) { fprintf(stdout, "  - wrote region names to %s -\n", filename); }
+        if (wRank == 0) { fprintf(stdout, "  - wrote region names to %s -\n", filename.c_str()); }
         #endif
     }
 }

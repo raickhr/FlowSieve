@@ -10,7 +10,8 @@ void initialize_subset_file(
         const std::vector<double> & windows,    /**< [in] windowing sizes */
         const int & Nsamples,                   /**< [in] number of samples */
         const std::vector<std::string> & vars,  /**< [in] name of variables to write */
-        const char * filename,                  /**< [in] name for the output file */
+        //const char * filename,                  
+        const std::string & filename,           /**< [in] name for the output file */
         const double filter_scale,              /**< [in] lengthscale used in the filter */
         const MPI_Comm comm                     /**< [in] MPI Communicator */
         ) {
@@ -22,9 +23,10 @@ void initialize_subset_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     retval = nc_put_att_double(ncid, NC_GLOBAL, "filter_scale", NC_FLOAT, 1, &filter_scale);
@@ -80,7 +82,7 @@ void initialize_subset_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    fprintf(stdout, "Output file (%s) initialized.\n\n", buffer);
+    fprintf(stdout, "Output file (%s) initialized.\n\n", filename.c_str() );
     #endif
 
     if (wRank == 0) {
@@ -89,7 +91,7 @@ void initialize_subset_file(
         const char* dim_names[] = {"time", "depth", "window", "sample"};
         const int ndims = 4;
         for (size_t varInd = 0; varInd < vars.size(); ++varInd) {
-            add_var_to_file(vars.at(varInd), dim_names, ndims, buffer);
+            add_var_to_file(vars.at(varInd), dim_names, ndims, filename );
         }
     }
 }

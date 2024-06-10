@@ -39,8 +39,6 @@ int main(int argc, char *argv[]) {
             "Please update constants.hpp accordingly.");
 
     // Enable all floating point exceptions but FE_INEXACT
-    //feenableexcept( FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW );
-    //fprintf( stdout, " %d : %d \n", FE_ALL_EXCEPT, FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_INEXACT | FE_UNDERFLOW );
     feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
 
     // Specify the number of OpenMP threads
@@ -80,6 +78,14 @@ int main(int argc, char *argv[]) {
                                                                 "NONE",                         
                                                                 asked_help,
                                                                 "netCDF file containing radial/vertical velocity, if applicable. \nNONE if no radial velocity."),
+                        &pressure_input_fname = input.getCmdOption("--pressure_input_file", 
+                                                                "NONE",                         
+                                                                asked_help,
+                                                                "netCDF file containing pressure, if applicable. \nNONE if no pressure data."),
+                        &density_input_fname = input.getCmdOption("--density_input_file", 
+                                                                "NONE",                         
+                                                                asked_help,
+                                                                "netCDF file containing density, if applicable. \nNONE if no density data."),
                         &wind_input_fname  = constants::COMP_WIND_FORCE ?
                                                 input.getCmdOption("--wind_tau_input_file",        
                                                                    "wind_tau_projection.nc",       
@@ -140,6 +146,8 @@ int main(int argc, char *argv[]) {
                         &pot_field_var_name     = input.getCmdOption("--pot_field", "Phi",   asked_help, "Name of potential field (potential function) in input file."),
                         &vel_field_var_name     = input.getCmdOption("--vel_field", "u_lat", asked_help, "Name of a velocity field in input file (used to get land information)."),
                         &u_r_field_var_name     = input.getCmdOption("--u_r_field", "u_r",   asked_help, "Name of vertical/radial velocity field in input file (if used)."),
+                        &pressure_field_var_name= input.getCmdOption("--pressure_field", "pressure",  asked_help, "Name of pressure field in input file (if used)."),
+                        &density_field_var_name = input.getCmdOption("--density_field",  "density",   asked_help, "Name of density field in input file (if used)."),
                         &wind_tau_Psi_var_name  = constants::COMP_WIND_FORCE ? input.getCmdOption("--wind_tau_Psi",  "wind_tau_Psi", asked_help) : "",
                         &wind_tau_Phi_var_name  = constants::COMP_WIND_FORCE ? input.getCmdOption("--wind_tau_Phi",  "wind_tau_Phi", asked_help) : "",
                         &uiuj_F_r_var_name      = constants::COMP_PI_HELMHOLTZ ? input.getCmdOption("--uiuj_F_r",      "uiuj_F_r",     asked_help) : "",
@@ -157,7 +165,11 @@ int main(int argc, char *argv[]) {
                         &region_defs_var_name = input.getCmdOption("--region_definitions_var",     
                                                                    "region_definition",     
                                                                    asked_help,
-                                                                   "Name of the variable in the regions file that provides the region definitions.");
+                                                                   "Name of the variable in the regions file that provides the region definitions."),
+                        &coarse_map_grid_fname = input.getCmdOption("--coarse_map_grid",     
+                                                                   "none",     
+                                                                   asked_help,
+                                                                   "netCDF file containing user-specified lat/lon grid for coarsened maps." );
 
     // Also read in the filter scales from the commandline
     //   e.g. --filter_scales "10.e3 150.76e3 1000e3" (units are in metres)
@@ -190,6 +202,11 @@ int main(int argc, char *argv[]) {
 
     // Apply some cleaning to the processor allotments if necessary. 
     source_data.check_processor_divisions( Nprocs_in_time_input, Nprocs_in_depth_input );
+
+    // Load in the coarsened grid, if applicable
+    if ( not( coarse_map_grid_fname == "none" ) ) {
+        source_data.prepare_for_coarsened_grids( coarse_map_grid_fname );
+    }
      
     // Convert to radians, if appropriate
     if ( latlon_in_degrees == "true" ) {
@@ -228,6 +245,22 @@ int main(int argc, char *argv[]) {
     } else {
         source_data.load_variable( "u_r",  u_r_field_var_name, u_r_input_fname, false, true );
         source_data.compute_radial_vel = true;
+    }
+
+    // Read pressure, if relevant
+    if ( pressure_input_fname == "NONE" ) {
+        source_data.has_pressure = false;
+    } else {
+        source_data.load_variable( "pressure", pressure_field_var_name, pressure_input_fname, false, true );
+        source_data.has_pressure = true;
+    }
+
+    // Read density, if relevant
+    if ( density_input_fname == "NONE" ) {
+        source_data.has_density = false;
+    } else {
+        source_data.load_variable( "density", density_field_var_name, density_input_fname, false, true );
+        source_data.has_density = true;
     }
 
     // Read in the Helmholtz fields for uiuj
@@ -289,12 +322,25 @@ int main(int argc, char *argv[]) {
             extend_mask_to_poles( source_data.reference_mask, mask_data, extended_latitude, orig_lat_start_in_extend, false );
         }
 
+        //
+        //// Extend density and pressure if relevant
+        //
+        if ( source_data.has_pressure ) {
+            extend_field_to_poles( source_data.variables.at("pressure"), source_data, extended_latitude, orig_lat_start_in_extend );
+        }
+        if ( source_data.has_density ) {
+            extend_field_to_poles( source_data.variables.at("density"), source_data, extended_latitude, orig_lat_start_in_extend );
+        }
+
+
+
+
         // Extend out all of the region definitions
         mask_data.compute_cell_areas();
         mask_data.compute_region_areas();
 
         // Read in the region definitions and compute region areas
-        if ( check_file_existence( region_defs_fname ) ) {
+        if ( constants::APPLY_POSTPROCESS and check_file_existence( region_defs_fname ) ) {
             // If the file exists, then read in from that
             mask_data.load_region_definitions( region_defs_fname, region_defs_dim_name, region_defs_var_name );
         } else {

@@ -19,9 +19,10 @@ void initialize_particle_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename.c_str());
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename.c_str());
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Record coordinate type
@@ -67,17 +68,11 @@ void initialize_particle_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", buffer); }
+    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", filename.c_str() ); }
     #endif
 
     vars.push_back("longitude");
     vars.push_back("latitude");
-
-    #if DEBUG >= 1
-    vars.push_back("rev_longitude");
-    vars.push_back("rev_latitude");
-    vars.push_back("fore_back_dists");
-    #endif
 
     if (wRank == 0) {
         // Loop through and add the desired variables
@@ -85,7 +80,7 @@ void initialize_particle_file(
         const char* dim_names[] = {"time", "trajectory"};
         const int ndims = 2;
         for (size_t varInd = 0; varInd < vars.size(); ++varInd) {
-            add_var_to_file(vars.at(varInd), dim_names, ndims, buffer);
+            add_var_to_file(vars.at(varInd), dim_names, ndims, filename );
         }
     }
 

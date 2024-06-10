@@ -2,6 +2,7 @@
 #include <string>
 #include <mpi.h>
 #include <math.h>
+#include <fenv.h>
 #include "../netcdf_io.hpp"
 #include "../constants.hpp"
 
@@ -12,7 +13,8 @@ void write_integral_to_post(
         std::string field_suffix,           /**< [in] name of the variable in the netcdf file */
         size_t * start,                     /**< [in] starting indices for the write */
         size_t * count,                     /**< [in] size of the write in each dimension */
-        const char * filename,              /**< [in] name of the netcdf file */
+        //const char * filename,              
+        const std::string & filename,       /**< [in] name of the netcdf file */
         const int region_dim,               /**< [in] integer index for region dimension */
         const MPI_Comm comm                 /**< [in] MPI Communicator */
         ) {
@@ -24,12 +26,16 @@ void write_integral_to_post(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_WRITE | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
 
-    MPI_Barrier(comm);
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    // Some netcdf functions [in some netcdf versions] cause floating-point errors
+    //  so, we need to disable floating point exceptions when we try to open files.
+    fedisableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
+    retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+    // Now we can restore fp-exception handling, after clearing out any that were raised
+    feclearexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // erase whatever exceptions were raised
+    feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // re-enable exceptions
 
     //
     //// Get the median value to let us use offsets
@@ -198,12 +204,12 @@ void write_integral_to_post(
     }
 
     // Close the file
-    MPI_Barrier(comm);
+    //MPI_Barrier(comm);
     retval = nc_close(ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 1
     if (wRank == 0) { fprintf(stdout, "  - wrote %s to %s -\n", 
-            (field_name + field_suffix).c_str(), filename); }
+            (field_name + field_suffix).c_str(), filename.c_str()); }
     #endif
 }

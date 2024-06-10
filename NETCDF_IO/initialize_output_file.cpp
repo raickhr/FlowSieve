@@ -8,7 +8,8 @@
 void initialize_output_file(
         const dataset & source_data,
         const std::vector<std::string> & vars,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const double filter_scale,
         const MPI_Comm comm
         ) {
@@ -31,9 +32,10 @@ void initialize_output_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG>=2
@@ -160,7 +162,7 @@ void initialize_output_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", buffer); }
+    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", filename.c_str() ); }
     #endif
 
     if (wRank == 0) {
@@ -175,9 +177,9 @@ void initialize_output_file(
         const int ndims_LLC      = 3;
         for (size_t varInd = 0; varInd < vars.size(); ++varInd) {
             if ( constants::GRID_TYPE == constants::GridType::MeshGrid ) {
-                add_var_to_file( vars.at(varInd), dim_names_MeshGrid, ndims_MeshGrid, buffer );
+                add_var_to_file( vars.at(varInd), dim_names_MeshGrid, ndims_MeshGrid, filename );
             } else if ( constants::GRID_TYPE == constants::GridType::LLC ) {
-                add_var_to_file( vars.at(varInd), dim_names_LLC, ndims_LLC, buffer );
+                add_var_to_file( vars.at(varInd), dim_names_LLC, ndims_LLC, filename );
             }
         }
     }

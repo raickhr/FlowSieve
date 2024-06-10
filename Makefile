@@ -111,7 +111,14 @@ $(TOROIDAL_OBJS): %.o : %.cpp constants.hpp
 	$(MPICXX) $(LDFLAGS) -c $(CFLAGS) -o $@ $< $(LINKS) 
 
 
-# Get list of toroidal projection files
+# Get list of direct filtering files
+DIRECT_FILTER_CPPS := $(wildcard  Functions/DirectFilter/*.cpp)
+DIRECT_FILTER_OBJS := $(addprefix Functions/DirectFilter/,$(notdir $(DIRECT_FILTER_CPPS:.cpp=.o)))
+
+$(DIRECT_FILTER_OBJS): %.o : %.cpp constants.hpp
+	$(MPICXX) $(LDFLAGS) -c $(CFLAGS) -o $@ $< $(LINKS)
+
+# Get list of Helmholtz filtering files
 HELMHOLTZ_CPPS := $(wildcard  Functions/Helmholtz/*.cpp)
 HELMHOLTZ_OBJS := $(addprefix Functions/Helmholtz/,$(notdir $(HELMHOLTZ_CPPS:.cpp=.o)))
 
@@ -124,7 +131,7 @@ ALGLIB_CPPS := $(wildcard  ALGLIB/*.cpp)
 ALGLIB_OBJS := $(addprefix ALGLIB/,$(notdir $(ALGLIB_CPPS:.cpp=.o)))
 
 ALGLIB/%.o: ALGLIB/%.cpp
-	$(CXX) -I ./ALGLIB -c $(ALGLIB_OPT_FLAGS) -o $@ $<
+	$(MPICXX) $(LDFLAGS) -c $(CFLAGS) -I ./ALGLIB -c $(ALGLIB_OPT_FLAGS) -o $@ $<
 
 
 # Get the list of preprocessing  cpp files
@@ -140,11 +147,12 @@ TEST_CPPS := $(wildcard Tests/*.cpp)
 TEST_EXES := $(addprefix Tests/,$(notdir $(TEST_CPPS:.cpp=.x)))
 
 
-.PHONY: clean hardclean docs cleandocs tests all ALGLIB
+.PHONY: clean hardclean docs cleandocs tests all ALGLIB NETCDF_IO POSTPROCESS
 clean:
 	rm -f *.o 
 	rm -f NETCDF_IO/*.o 
 	rm -f Functions/*.o 
+	rm -f Functions/DirectFilter/*.o
 	rm -f Functions/Differentiation_Tools/*.o 
 	rm -f Functions/Helmholtz/*.o 
 	rm -f Functions/SW_Tools/*.o 
@@ -159,6 +167,7 @@ hardclean:
 	rm -f *.[o,x] 
 	rm -f NETCDF_IO/*.o 
 	rm -f Functions/*.o 
+	rm -f Functions/DirectFilter/*.o
 	rm -f Functions/Differentiation_Tools/*.o 
 	rm -f Functions/Helmholtz/*.o 
 	rm -f Functions/SW_Tools/*.o 
@@ -180,6 +189,9 @@ tests: ${TEST_EXES}
 
 ALGLIB: ${ALGLIB_OBJS}
 
+NETCDF_IO: ${NETCDF_IO_OBJS}
+
+POSTPROCESS: ${POSTPROCESS_OBJS}
 
 # 
 # Commands for building executables (and related object files)
@@ -187,14 +199,12 @@ ALGLIB: ${ALGLIB_OBJS}
 
 # Group together executables with similar compilations
 CORE_TARGET_EXES := Case_Files/coarse_grain.x \
-					Case_Files/coarse_grain_scalars.x \
 					Case_Files/particles.x \
 					Case_Files/compare_particles.x \
 					Case_Files/project_onto_particles.x \
 					Case_Files/vonStorch.x \
 					Case_Files/vonStorch_year_sets.x
 CORE_TARGET_OBJS := Case_Files/coarse_grain.o \
-					Case_Files/coarse_grain_scalars.o \
 					Case_Files/particles.o \
 					Case_Files/compare_particles.o \
 					Case_Files/project_onto_particles.o \
@@ -204,13 +214,23 @@ CORE_TARGET_OBJS := Case_Files/coarse_grain.o \
 $(CORE_TARGET_OBJS): %.o : %.cpp constants.hpp
 	$(MPICXX) ${VERSION} $(LDFLAGS) -c $(CFLAGS) -o $@ $< $(LINKS) 
 
-$(CORE_TARGET_EXES): %.x : ${CORE_OBJS} ${INTERFACE_OBJS} %.o
+$(CORE_TARGET_EXES): %.x : ${CORE_OBJS} ${INTERFACE_OBJS} ${PREPROCESS_OBJS} ${ALGLIB_OBJS} ${DIRECT_FILTER_OBJS} %.o
 	$(MPICXX) ${VERSION} $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LINKS) 
 
 
 # Helmholtz
-HELM_TARGET_EXES := Case_Files/coarse_grain_helmholtz.x Case_Files/LLC_coarse_grain_helmholtz.x Case_Files/LLC_coarse_grain_scalars.x
-HELM_TARGET_OBJS := Case_Files/coarse_grain_helmholtz.o Case_Files/LLC_coarse_grain_helmholtz.o Case_Files/LLC_coarse_grain_scalars.o
+HELM_TARGET_EXES := Case_Files/coarse_grain_helmholtz.x  \
+					Case_Files/coarse_grain_scalars.x \
+					Case_Files/coarse_grain_scalars_aniso.x \
+					Case_Files/Spherical_RBF.x \
+					Case_Files/Spherical_RBF_Eigen.x \
+					Case_Files/Spherical_RBF_Eigen_ReMap.x
+HELM_TARGET_OBJS := Case_Files/coarse_grain_helmholtz.o  \
+					Case_Files/coarse_grain_scalars.o \
+					Case_Files/coarse_grain_scalars_aniso.o \
+					Case_Files/Spherical_RBF.o \
+					Case_Files/Spherical_RBF_Eigen.o \
+					Case_Files/Spherical_RBF_Eigen_ReMap.o
 
 $(HELM_TARGET_OBJS): %.o : %.cpp constants.hpp
 	$(MPICXX) ${VERSION} $(LDFLAGS) -c $(CFLAGS) -o $@ $< $(LINKS) 
@@ -233,6 +253,9 @@ TOROID_TARGET_EXES := 	Case_Files/Helmholtz_projection.x \
 						Case_Files/Helmholtz_projection_SymTensor.x \
 						Case_Files/Helmholtz_projection_uiuj.x \
 						Case_Files/LLC_Helmholtz_projections.x \
+						Case_Files/LLC_interpolator_simple.x \
+						Case_Files/LLC_build_adjacency.x \
+						Case_Files/LLC_map_between_grids.x \
 						Case_Files/interpolator.x \
 						Case_Files/geostrophic_vel.x \
 						Case_Files/coarsen_grid_linear.x \
@@ -240,14 +263,15 @@ TOROID_TARGET_EXES := 	Case_Files/Helmholtz_projection.x \
 						Case_Files/Pi_helm_breakdown.x \
 						Case_Files/thermal_wind.x \
 						Case_Files/compute_radial_velocity.x \
-						Case_Files/LLC_interpolator_simple.x \
-						Case_Files/LLC_testbed.x \
-						Case_Files/LLC_build_adjacency.x \
-						Case_Files/LLC_map_between_grids.x
-TOROID_TARGET_OBJS := 	Case_Files/Helmholtz_projection.o \
+						Case_Files/Johnson_decomp.x
+
+TOROID_TARGET_OBJS :=   Case_Files/Helmholtz_projection.o \
 						Case_Files/Helmholtz_projection_SymTensor.o \
 						Case_Files/Helmholtz_projection_uiuj.o \
 						Case_Files/LLC_Helmholtz_projections.o \
+						Case_Files/LLC_interpolator_simple.o \
+						Case_Files/LLC_build_adjacency.o \
+						Case_Files/LLC_map_between_grids.o \
 						Case_Files/interpolator.o \
 						Case_Files/geostrophic_vel.o \
 						Case_Files/coarsen_grid_linear.o \
@@ -255,10 +279,7 @@ TOROID_TARGET_OBJS := 	Case_Files/Helmholtz_projection.o \
 						Case_Files/Pi_helm_breakdown.o \
 						Case_Files/thermal_wind.o \
 						Case_Files/compute_radial_velocity.o \
-						Case_Files/LLC_interpolator_simple.o \
-						Case_Files/LLC_testbed.o \
-						Case_Files/LLC_build_adjacency.o \
-						Case_Files/LLC_map_between_grids.o
+						Case_Files/Johnson_decomp.o
 
 $(TOROID_TARGET_OBJS): %.o : %.cpp constants.hpp
 	$(MPICXX) ${VERSION} $(LDFLAGS) -I ./ALGLIB -c $(CFLAGS) -o $@ $< $(LINKS) 

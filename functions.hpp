@@ -30,7 +30,7 @@ class dataset {
         //
 
         // Storage for processor assignments
-        int Nprocs_in_time, Nprocs_in_depth;
+        int Nprocs_in_time, Nprocs_in_depth, Nprocs_in_quadrature = 1;
 
         // Vectors to store the dimension variables
         std::vector<double> time, depth, latitude, longitude;
@@ -39,17 +39,21 @@ class dataset {
 
         // MPI Communicator Objects
         MPI_Comm MPI_Comm_Global = MPI_COMM_WORLD;
-        MPI_Comm MPI_subcomm_sametimes;
-        MPI_Comm MPI_subcomm_samedepths;
+        MPI_Comm MPI_subcomm_sametimes,
+                 MPI_subcomm_samedepths,
+                 MPI_subcomm_sametimedepths,
+                 MPI_subcomm_samequadrature = MPI_COMM_WORLD;
 
         // Store cell areas
         std::vector<double> areas;
 
         // Boolean to indicate if we're computing u_r from incompressibility
-        bool compute_radial_vel    = false,
-             use_depth_derivatives = false,
-             depth_is_elevation    = false,
-             depth_is_increasing   = true;
+        bool compute_radial_vel     = false,
+             use_depth_derivatives  = false,
+             depth_is_elevation     = false,
+             depth_is_increasing    = true,
+             has_pressure           = false, // Do we have a pressure variable
+             has_density            = false; // Do we have a density variable
 
         // Dictionary for the variables (velocity components, density, etc)
         std::map< std::string , std::vector<double> > variables;
@@ -59,6 +63,9 @@ class dataset {
         std::vector< std::string > region_names;
         std::map< std::string, std::vector<bool> > regions;
         std::vector<double> region_areas, region_areas_water_only;
+
+        // The vectors for the coarse lat/lon maps
+        std::vector<double> coarse_map_lat, coarse_map_lon, coarse_map_areas;
 
         // Store mask data (i.e. land vs water)
         std::vector<bool> mask, reference_mask, mask_DEPTH;
@@ -98,9 +105,14 @@ class dataset {
                                         const MPI_Comm = MPI_COMM_WORLD );
         void compute_region_areas();
 
+        // Prepare for grid-coarsening outputs
+        void prepare_for_coarsened_grids(   const std::string filename,
+                                            const MPI_Comm = MPI_COMM_WORLD );
+
         // Check the processors divions between dimensions
         void check_processor_divisions( const int Nprocs_in_time_input, 
                                         const int Nprocs_in_depth_input, 
+                                        const int Nprocs_in_quad_input = 1, 
                                         const MPI_Comm = MPI_COMM_WORLD );
 
         // Function to gather a variable across all depths (i.e. reconstruct depth profile)
@@ -174,6 +186,8 @@ double distance(const double lon1,     const double lat1,
 
 void compute_local_kernel(
         std::vector<double> & local_kernel,
+        std::vector<double> & local_dl_kernel,
+        std::vector<double> & local_dl2_kernel,
         const double scale,
         const dataset & source_data,
         const int Ilat,     const int Ilon,
@@ -249,7 +263,11 @@ void LLC_filtering_helmholtz(
         );
 
 void apply_filter_at_point(
-        std::vector<double*> & coarse_val,   
+        std::vector<double*> & coarse_vals,   
+        std::vector<double*> & dl_coarse_vals,
+        std::vector<double*> & dll_coarse_vals,
+        double & dl_kernel_val,
+        double & dll_kernel_val,
         const std::vector<const std::vector<double>*> & fields,
         const dataset & source_data,
         const int Itime,  const int Idepth, const int Ilat, const int Ilon,
@@ -258,10 +276,33 @@ void apply_filter_at_point(
         const double scale,
         const std::vector<bool> & use_mask,
         const std::vector<double> & local_kernel,
+        const std::vector<double> & local_dl_kernel,
+        const std::vector<double> & local_dll_kernel,
         const std::vector<double> * weight = NULL
         );
 
-double kernel(const double distance, const double scale);
+void apply_filter_at_point_aniso(
+        std::vector<double*> & coarse_vals,   
+        std::vector<double*> & dl_coarse_vals,
+        std::vector<double*> & dll_coarse_vals,
+        std::vector<double*> & aniso_vals,
+        std::vector<double*> & aniso_vals_dim,
+        double & dl_kernel_val,
+        double & dll_kernel_val,
+        const std::vector<const std::vector<double>*> & fields,
+        const dataset & source_data,
+        const int Itime,  const int Idepth, const int Ilat, const int Ilon,
+        const int LAT_lb,
+        const int LAT_ub,
+        const double scale,
+        const std::vector<bool> & use_mask,
+        const std::vector<double> & local_kernel,
+        const std::vector<double> & local_dl_kernel,
+        const std::vector<double> & local_dll_kernel,
+        const std::vector<double> * weight = NULL
+        );
+
+double kernel(const double distance, const double scale, const int deriv_order = 0);
 
 double kernel_alpha(void);
 
@@ -271,6 +312,10 @@ void compute_vorticity_at_point(
         double & vort_lat_tmp,
         double & div_tmp,
         double & OkuboWeiss_tmp,
+        double & cyclonic_energy,
+        double & anticyclonic_energy,
+        double & divergent_strain_energy,
+        double & traceless_strain_energy,
         const dataset & source_data,
         const std::vector<double> & u_r, 
         const std::vector<double> & u_lon, 
@@ -283,6 +328,10 @@ void compute_vorticity(
         std::vector<double> & vort_lat,
         std::vector<double> & vel_div,
         std::vector<double> & OkuboWeiss,
+        std::vector<double> & cyclonic_energy,
+        std::vector<double> & anticyclonic_energy,
+        std::vector<double> & divergent_strain_energy,
+        std::vector<double> & traceless_strain_energy,
         const dataset & source_data,
         const std::vector<double> & u_r, 
         const std::vector<double> & u_lon, 
@@ -315,6 +364,9 @@ void compute_Pi(
         const std::vector<double> & uyuy, 
         const std::vector<double> & uyuz, 
         const std::vector<double> & uzuz,
+        const std::vector<double> * ux_in_tau = NULL,   
+        const std::vector<double> * uy_in_tau = NULL,   
+        const std::vector<double> * uz_in_tau = NULL,
         const MPI_Comm comm = MPI_COMM_WORLD);
 
 void compute_Pi_shift_deriv(
@@ -354,53 +406,6 @@ void compute_Z(
         const std::vector<double> & vort_uz,
         const MPI_Comm comm = MPI_COMM_WORLD);
 
-void compute_Lambda_rotational(
-        std::vector<double> & Lambda_rot,
-        const std::vector<double> & coarse_vort_r,
-        const std::vector<double> & coarse_vort_lon,
-        const std::vector<double> & coarse_vort_lat,
-        const std::vector<double> & coarse_rho,
-        const std::vector<double> & coarse_p,
-        const int Ntime, const int Ndepth, const int Nlat, const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask,
-        const double scale_factor
-        );
-
-
-void  compute_Lambda_full(
-        std::vector<double> & Lambda,
-        const std::vector<double> & coarse_u_r,
-        const std::vector<double> & coarse_u_lon,
-        const std::vector<double> & coarse_u_lat,
-        const std::vector<double> & tilde_u_r,
-        const std::vector<double> & tilde_u_lon,
-        const std::vector<double> & tilde_u_lat,
-        const std::vector<double> & coarse_p,
-        const int Ntime,
-        const int Ndepth,
-        const int Nlat,
-        const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask
-        );
-
-void compute_Lambda_nonlin_model(
-        std::vector<double> & Lambda_nonlin,
-        const std::vector<double> & coarse_u_r,
-        const std::vector<double> & coarse_u_lon,
-        const std::vector<double> & coarse_u_lat,
-        const std::vector<double> & coarse_rho,
-        const std::vector<double> & coarse_p,
-        const int Ntime, const int Ndepth, const int Nlat, const int Nlon,
-        const std::vector<double> & longitude,
-        const std::vector<double> & latitude,
-        const std::vector<bool> & mask,
-        const double scale_factor
-        );
-
 double depotential_temperature( 
         const double p, 
         const double theta);
@@ -436,6 +441,58 @@ void compute_spatial_average(
         const int Nlon,
         const std::vector<bool> & mask);
 
+void compute_KE_spectra_and_slopes( 
+        std::vector<double> & u_spectrum_tot, 
+        std::vector<double> & u_spectrum_tor, 
+        std::vector<double> & u_spectrum_pot,
+        std::vector<double> & v_spectrum_tot, 
+        std::vector<double> & v_spectrum_tor, 
+        std::vector<double> & v_spectrum_pot,
+        std::vector<double> & spec_slope_tot, 
+        std::vector<double> & spec_slope_tor, 
+        std::vector<double> & spec_slope_pot,
+        const std::vector<double> & u_lon_tot, 
+        const std::vector<double> & u_lon_tor, 
+        const std::vector<double> & u_lon_pot,
+        const std::vector<double> & u_lat_tot, 
+        const std::vector<double> & u_lat_tor, 
+        const std::vector<double> & u_lat_pot,
+        const std::vector<double> & dl_coarse_Phi, 
+        const std::vector<double> & dl_coarse_Psi,
+        const std::vector<double> & dll_coarse_Phi, 
+        const std::vector<double> & dll_coarse_Psi,
+        const dataset & source_data,
+        const double filter_scale
+        );
+
+
+// Baroclinic KE-PE conversions [Lambda]
+void compute_Lambda_rotational(
+    std::vector<double> & Lambda_rot,
+    const std::vector<double> & coarse_vort_r,
+    const std::vector<double> & coarse_vort_lon,
+    const std::vector<double> & coarse_vort_lat,
+    const std::vector<double> & coarse_rho,
+    const std::vector<double> & coarse_p,
+    const dataset & source_data,
+    const double scale_factor,
+    const MPI_Comm comm = MPI_COMM_WORLD
+    );
+
+void compute_Lambda_nonlin_model(
+    std::vector<double> & Lambda_nonlin,
+    const std::vector<double> & coarse_u_r,
+    const std::vector<double> & coarse_u_lon,
+    const std::vector<double> & coarse_u_lat,
+    const std::vector<double> & coarse_rho,
+    const std::vector<double> & coarse_p,
+    const dataset & source_data,
+    const double scale_factor,
+    const MPI_Comm comm = MPI_COMM_WORLD
+    );
+
+
+//
 void get_lat_bounds(
         int & LAT_lb,
         int & LAT_ub,

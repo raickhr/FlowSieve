@@ -4,6 +4,7 @@
 #include "../functions.hpp"
 #include <cassert>
 #include <math.h>
+#include <fenv.h>
 
 /*!
  *  \brief Read a specific variable from a specific file.
@@ -44,26 +45,30 @@ void read_var_from_file(
 
     assert( check_file_existence( filename.c_str() ) );
 
-    int wRank, wSize, Nprocs_in_dim, Iproc_in_dim;
+    int wRank, wSize, Nprocs_in_dim=1, Iproc_in_dim=0;
     MPI_Comm_rank( comm, &wRank );
     MPI_Comm_size( comm, &wSize );
 
     // Open the NETCDF file
-    const int str_len = 100;
-    int FLAG = NC_NETCDF4 | NC_MPIIO;
-    int ncid=0, retval;
-    char buffer [str_len];
-    snprintf(buffer, str_len, filename.c_str());
+    int FLAG = NC_NOWRITE; //NC_NETCDF4 | NC_MPIIO;
+    int ncid=0, retval=NC_NOERR;
 
     #if DEBUG >= 1
     if (wRank == 0) {
-        fprintf(stdout, "Attempting to read %s from %s\n", var_name.c_str(), buffer);
+        fprintf(stdout, "Attempting to read %s from %s\n", var_name.c_str(), filename.c_str());
         fflush(stdout);
     }
     #endif
 
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    // Some netcdf functions [in some netcdf versions] cause floating-point errors
+    //  so, we need to disable floating point exceptions when we try to open files.
+    fedisableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
+    retval = nc_open_par(filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval != NC_NOERR ) { NC_ERR(retval, __LINE__, __FILE__); }
+
+    // Now we can restore fp-exception handling, after clearing out any that were raised
+    feclearexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // erase whatever exceptions were raised
+    feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // re-enable exceptions
 
     // Check if netcdf-4 format
     int input_nc_format;
@@ -84,14 +89,11 @@ void read_var_from_file(
     #endif
     assert( input_nc_format == NC_FORMAT_NETCDF4 ); // input file must be netCDF-4 format. Use `nccopy -k netCDF-4 input.nc output.nc` to change file version
 
-    char varname [str_len];
-    snprintf(varname, str_len, var_name.c_str());
-
     int var_id, num_dims;
-    int dim_ids[NC_MAX_VAR_DIMS];
+    int dim_ids[NC_MAX_VAR_DIMS] = {};
 
     // Get the ID for the variable
-    retval = nc_inq_varid(ncid, varname, &var_id );
+    retval = nc_inq_varid(ncid, var_name.c_str(), &var_id );
     if (retval != NC_NOERR ) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // This should return an error if the variable doesn't exist
@@ -150,8 +152,11 @@ void read_var_from_file(
                 else if ( II == 1 ) { Nprocs_in_dim = Nprocs_in_depth; }
                 else                { Nprocs_in_dim = 0; assert(false); }  // II <= 1 so won't happen
 
+                assert( (count[II] >= (size_t)Nprocs_in_dim) && "Too many processors have been assigned to dimension." );
+
                 my_count = ( (int)count[II] ) / Nprocs_in_dim;
                 overflow = (int)( count[II] - my_count * Nprocs_in_dim );
+
 
                 Index1to4( wRank, Itime_proc,      Idepth_proc,     Ilat_proc, Ilon_proc,
                                   Nprocs_in_time,  Nprocs_in_depth, 1,         1          );
@@ -296,7 +301,10 @@ void read_var_from_file(
     
     // Determine masking, if desired
     double fill_val = 1e100;  // backup value
-    size_t num_land = 0, num_water = 0, num_unmasked = 0;
+    double var_max = -1e10, var_min = 1e10;
+    #if DEBUG >= 1
+    size_t num_land = 0, num_water = 0, num_unmasked = 0, num_zeros = 0;
+    #endif
 
     if (mask != NULL) { mask->resize(var.size()); }
 
@@ -331,22 +339,32 @@ void read_var_from_file(
             if (constants::FILTER_OVER_LAND) {
                 // If requested to filter over land, then fill in the mask now
                 if (mask != NULL) { mask->at(II) = true; }
+                #if DEBUG >= 1
                 num_unmasked++;
+                #endif
                 var.at(II) = land_fill_value;
             } else {
                 if (mask != NULL) { mask->at(II) = false; }
+                #if DEBUG >= 1
                 num_land++;
+                #endif
             }
         } else {
             var_max = std::max( var_max, var.at(II) );
             var_min = std::min( var_min, var.at(II) );
             if (mask != NULL) { mask->at(II) = true; }
+            #if DEBUG >= 1
             num_water++;
+            #endif
 
             // Apply scale factor and offset to non-masked values
             if (scale  != 1.) { var.at(II) = var.at(II) * scale; }
             if (offset != 0.) { var.at(II) = var.at(II) + offset; }
         }
+
+        #if DEBUG >= 1
+        if (var.at(II) == 0) { num_zeros++; }
+        #endif
     }
 
     var_max = var_max * scale + offset;
@@ -357,13 +375,9 @@ void read_var_from_file(
         fprintf(stdout, "  Land cover = %'.4g%% (%'zu water vs %'zu land) (%'zu land converted to water) \n", 
                 100 * ((double)num_land) / (num_land + num_water + num_unmasked),
                 num_water + num_unmasked, num_land, num_unmasked);
-    }
-    #endif
-
-    #if DEBUG >= 1
-    if (wRank == 0) { 
         fprintf(stdout, "  var_max = %g\n", var_max);
         fprintf(stdout, "  var_min = %g\n", var_min);
+        fprintf(stdout, "  num zeros = %zu\n", num_zeros);
         fprintf(stdout, "\n\n"); 
     }
     #endif

@@ -9,7 +9,8 @@
 void initialize_regions_file(
         const std::vector<double> & latitude,
         const std::vector<double> & longitude,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const MPI_Comm comm
         ) {
 
@@ -20,9 +21,10 @@ void initialize_regions_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Record coordinate type
@@ -84,14 +86,14 @@ void initialize_regions_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", buffer); }
+    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", filename.c_str() ); }
     #endif
 
     if (wRank == 0) {
         // time averages
         const char* dim_names[] = {"region", "latitude", "longitude"};
         const int ndims = 3;
-        add_var_to_file("region_definitions", dim_names, ndims, buffer);
+        add_var_to_file("region_definitions", dim_names, ndims, filename);
     }
 
     #if DEBUG >= 2

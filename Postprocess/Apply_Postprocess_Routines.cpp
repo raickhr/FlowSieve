@@ -3,6 +3,8 @@
 #include <omp.h>
 #include <vector>
 #include <cassert>
+#include <sstream>
+#include <iomanip>
 
 #include "../constants.hpp"
 #include "../functions.hpp"
@@ -50,6 +52,30 @@ void Apply_Postprocess_Routines(
     int Ilat, Ilon, Itime, Idepth;
     size_t index, area_index;
 
+    double denom;
+
+    //
+    //// If spectral slope is in the list, we need to flag the index for it and the spectra
+    //
+    int spectral_slope_index = -1, u_spectrum_index = -1, v_spectrum_index = -1;
+    for ( int Ivar = 0; Ivar < num_fields; Ivar++ ) {
+        if ( vars_to_process.at(Ivar) == "u_lon_spectrum" ) {
+            u_spectrum_index = Ivar;
+        } else if ( vars_to_process.at(Ivar) == "u_lat_spectrum" ) {
+            v_spectrum_index = Ivar;
+        } else if ( vars_to_process.at(Ivar) == "KE_spectral_slope" ) {
+            spectral_slope_index = Ivar;
+        }
+    }
+    const bool doing_spectral_slope = ( (spectral_slope_index>=0) 
+                                        and (u_spectrum_index>=0)
+                                        and (v_spectrum_index>=0)
+                                        ) ;
+
+    // Apply spectrum-weight to spectral slope if appropriate
+    //  we'll need to divide by the spectrum average for each kind of average afterwards
+    // THIS IS DONE IN THE FILTERING CODE BLOCK
+
     //
     //// Start by initializing the postprocess file
     //
@@ -75,12 +101,20 @@ void Apply_Postprocess_Routines(
     }
 
     // Filename + file
-    char filename[50];
+    //char filename[50];
+    //if (filter_scale >= 0) {
+    //    snprintf(filename, 50, (filename_base + "_%.6gkm.nc").c_str(), filter_scale/1e3);
+    //} else {
+    //    snprintf(filename, 50, (filename_base + ".nc").c_str());
+    //}
+    std::ostringstream name_stream;
     if (filter_scale >= 0) {
-        snprintf(filename, 50, (filename_base + "_%.6gkm.nc").c_str(), filter_scale/1e3);
+        //name_stream << filename_base << std::fixed << std::setprecision(6) << (filter_scale / 1e3) << ".nc";
+        name_stream << filename_base << "_" << std::setprecision(6) << (filter_scale / 1e3) << "km.nc";
     } else {
-        snprintf(filename, 50, (filename_base + ".nc").c_str());
+        name_stream << filename_base << ".nc";
     }
+    std::string filename = name_stream.str();
     initialize_postprocess_file(
             source_data, OkuboWeiss_dim_vals, vars_to_process,
             filename, filter_scale, do_OkuboWeiss
@@ -97,7 +131,7 @@ void Apply_Postprocess_Routines(
     //
 
     #if DEBUG >= 1
-    if (wRank == 0) { fprintf(stdout, "  .. computing the average and std. dev. in each region\n"); }
+    if (wRank == 0) { fprintf(stdout, "\n\n  .. computing the average and std. dev. in each region\n"); }
     fflush(stdout);
     #endif
 
@@ -108,6 +142,16 @@ void Apply_Postprocess_Routines(
     if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
     compute_region_avg_and_std( field_averages, field_std_devs, source_data, postprocess_fields );
     if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_area_means");  }
+
+    if (doing_spectral_slope) {
+        for (index = 0; index < field_averages[0].size(); index++) {
+            denom =    field_averages[u_spectrum_index].at(index) 
+                     + field_averages[v_spectrum_index].at(index) ;
+            
+            field_averages[spectral_slope_index][index] = 
+                (denom == 0) ? 0. : field_averages[spectral_slope_index][index] / denom;
+        }
+    }
 
     #if DEBUG >= 1
     if (wRank == 0) { fprintf(stdout, "  .. writing region averages and deviations\n"); }
@@ -127,26 +171,45 @@ void Apply_Postprocess_Routines(
 
     if (constants::POSTPROCESS_DO_ZONAL_MEANS) {
         #if DEBUG >= 1
-        if (wRank == 0) { fprintf(stdout, "  .. computing the zonal average and std. dev.\n"); }
+        if (wRank == 0) { fprintf(stdout, "\n\n  .. computing the zonal average and std. dev.\n"); }
         fflush(stdout);
         #endif
 
         std::vector< std::vector< double > >
             zonal_averages(num_fields, std::vector<double>(Ntime * Ndepth * Nlat, 0.)), 
-            zonal_std_devs(num_fields, std::vector<double>(Ntime * Ndepth * Nlat, 0.));
+            zonal_std_devs(num_fields, std::vector<double>(Ntime * Ndepth * Nlat, 0.)),
+            zonal_medians(num_fields, std::vector<double>(Ntime * Ndepth * Nlat, 0.));
 
         if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
         compute_zonal_avg_and_std( zonal_averages, zonal_std_devs, source_data, postprocess_fields );
+        compute_zonal_median( zonal_medians, source_data, postprocess_fields );
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_zonal_means");  }
 
+        if (doing_spectral_slope) {
+            #pragma omp parallel default(none) \
+            private(index, denom) \
+            shared( zonal_averages ) \
+            firstprivate( u_spectrum_index, v_spectrum_index, spectral_slope_index )
+            {
+                #pragma omp for schedule(static)
+                for (index = 0; index < zonal_averages[0].size(); index++) {
+                    denom =    zonal_averages[u_spectrum_index].at(index) 
+                             + zonal_averages[v_spectrum_index].at(index) ;
+            
+                    zonal_averages[spectral_slope_index][index] = 
+                        (denom == 0) ? 0. : zonal_averages[spectral_slope_index][index] / denom;
+                }
+            }
+        }
+
         #if DEBUG >= 1
-        if (wRank == 0) { fprintf(stdout, "  .. writing region averages and deviations\n"); }
+        if (wRank == 0) { fprintf(stdout, "  .. writing zonal averages\n"); }
         fflush(stdout);
         #endif
 
         if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
         write_zonal_avg_and_std(
-            zonal_averages, zonal_std_devs, vars_to_process, filename,
+            zonal_averages, zonal_std_devs, zonal_medians, vars_to_process, filename,
             Stime, Sdepth, Ntime, Ndepth, Nlat, num_fields
             );
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_writing");  }
@@ -157,11 +220,10 @@ void Apply_Postprocess_Routines(
     //// If we have OkuboWeiss data, then also do processing along OW contours
     //
 
-    if (constants::DO_OKUBOWEISS_ANALYSIS) {
-        std::vector< double > OkuboWeiss_areas;
+    if (do_OkuboWeiss) {
 
         #if DEBUG >= 1
-        if (wRank == 0) { fprintf(stdout, "  .. Applying Okubo-Weiss processing\n"); }
+        if (wRank == 0) { fprintf(stdout, "\n\n  .. Applying Okubo-Weiss processing\n"); }
         fflush(stdout);
         #endif
 
@@ -169,7 +231,7 @@ void Apply_Postprocess_Routines(
             field_averages_OW(num_fields, std::vector<double>(Ntime * Ndepth * N_Okubo * num_regions, 0.)), 
             field_std_devs_OW(num_fields, std::vector<double>(Ntime * Ndepth * N_Okubo * num_regions, 0.));
 
-        OkuboWeiss_areas.resize(Ntime * Ndepth * N_Okubo * num_regions, 0.);
+        std::vector< double > OkuboWeiss_areas( Ntime * Ndepth * N_Okubo * num_regions, 0. );
 
         if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
         compute_region_avg_and_std_OkuboWeiss(
@@ -192,6 +254,51 @@ void Apply_Postprocess_Routines(
         if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_writing");  }
     }
 
+    //
+    //// If we're doing coarsened maps, do those now
+    //
+    if (source_data.coarse_map_lat.size() > 1) {
+        #if DEBUG >= 1
+        if (wRank == 0) { fprintf(stdout, "\n\n  .. computing coarsened maps\n"); }
+        fflush(stdout);
+        #endif
+
+        std::vector< std::vector< double > > 
+            coarsened_maps(num_fields, std::vector<double>(Ntime * Ndepth * source_data.coarse_map_lat.size() * source_data.coarse_map_lon.size(), 0.));
+
+        if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
+        compute_coarsened_map( coarsened_maps, source_data, postprocess_fields );
+
+        if (doing_spectral_slope) {
+            #pragma omp parallel default(none) \
+            private(index, denom) \
+            shared( coarsened_maps ) \
+            firstprivate( u_spectrum_index, v_spectrum_index, spectral_slope_index )
+            {
+                #pragma omp for schedule(static)
+                for (index = 0; index < coarsened_maps[0].size(); index++) {
+                    denom =    coarsened_maps[u_spectrum_index].at(index) 
+                             + coarsened_maps[v_spectrum_index].at(index) ;
+            
+                    coarsened_maps[spectral_slope_index][index] = 
+                        (denom == 0) ? 0. : coarsened_maps[spectral_slope_index][index] / denom;
+                }
+            }
+        }
+        if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_coarse_maps");  }
+
+        #if DEBUG >= 1
+        if (wRank == 0) { fprintf(stdout, "  .. writing coarsened maps\n"); }
+        fflush(stdout);
+        #endif
+
+        if (constants::DO_TIMING) { clock_on = MPI_Wtime(); }
+        write_coarsened_maps(
+                coarsened_maps, vars_to_process, filename, Stime, Sdepth, Ntime, Ndepth, 
+                source_data.coarse_map_lat.size(), source_data.coarse_map_lon.size(), num_fields
+                );
+        if (constants::DO_TIMING) { timing_records.add_to_record(MPI_Wtime() - clock_on, "postprocess_writing");  }
+    }
 
     //
     //// Time averages

@@ -60,47 +60,50 @@ double particles_interp_from_edges(
                     TR_fut_ind = Index(Itime+1, 0, top,    right,
                                        Ntime,   1, Nlat,   Nlon );
 
-    const size_t cutoff = 1e19;
-    if (BL_pre_ind > cutoff) {
-        fprintf(stdout, "BL_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+    // Verify that all of the indices are valid
+    const size_t cutoff = field->size();
+    if (BL_pre_ind >= cutoff) {
+        fprintf(stderr, "BL_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
                 BL_pre_ind, Itime, left, right, bottom, top);
-        assert(false);
+        assert(BL_pre_ind < cutoff);
     }
-    if (BR_pre_ind > cutoff) {
-        fprintf(stdout, "BR_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+    if (BR_pre_ind >= cutoff) {
+        fprintf(stderr, "BR_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
                 BR_pre_ind, Itime, left, right, bottom, top);
-        assert(false);
+        assert(BR_pre_ind < cutoff);
     }
-    if (TL_pre_ind > cutoff) {
-        fprintf(stdout, "TL_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+    if (TL_pre_ind >= cutoff) {
+        fprintf(stderr, "TL_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
                 TL_pre_ind, Itime, left, right, bottom, top);
-        assert(false);
+        assert(TL_pre_ind < cutoff);
     }
-    if (BR_pre_ind > cutoff) {
-        fprintf(stdout, "TR_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+    if (TR_pre_ind >= cutoff) {
+        fprintf(stderr, "TR_pre_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
                 TR_pre_ind, Itime, left, right, bottom, top);
-        assert(false);
+        assert(TR_pre_ind < cutoff);
     }
 
-    if (BL_fut_ind > cutoff) {
-        fprintf(stdout, "BL_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
-                BL_fut_ind, Itime, left, right, bottom, top);
-        assert(false);
-    }
-    if (BR_fut_ind > cutoff) {
-        fprintf(stdout, "BR_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
-                BR_fut_ind, Itime, left, right, bottom, top);
-        assert(false);
-    }
-    if (TL_fut_ind > cutoff) {
-        fprintf(stdout, "TL_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
-                TL_fut_ind, Itime, left, right, bottom, top);
-        assert(false);
-    }
-    if (BR_fut_ind > cutoff) {
-        fprintf(stdout, "TR_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
-                TR_fut_ind, Itime, left, right, bottom, top);
-        assert(false);
+    if (Ntime > 1) {
+        if (BL_fut_ind >= cutoff) {
+            fprintf(stderr, "BL_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+                    BL_fut_ind, Itime, left, right, bottom, top);
+            assert(BL_fut_ind < cutoff);
+        }
+        if (BR_fut_ind >= cutoff) {
+            fprintf(stderr, "BR_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+                    BR_fut_ind, Itime, left, right, bottom, top);
+            assert(BR_fut_ind < cutoff);
+        }
+        if (TL_fut_ind >= cutoff) {
+            fprintf(stderr, "TL_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+                    TL_fut_ind, Itime, left, right, bottom, top);
+            assert(TL_fut_ind < cutoff);
+        }
+        if (TR_fut_ind >= cutoff) {
+            fprintf(stderr, "TR_fut_ind = %'zu: (Itime,l,r,b,t) = (%'d, %'d, %'d, %'d, %'d)\n",
+                    TR_fut_ind, Itime, left, right, bottom, top);
+            assert(TR_fut_ind < cutoff);
+        }
     }
 
     // Get field values at each corner
@@ -108,6 +111,7 @@ double particles_interp_from_edges(
         if ( mask.at(TL_pre_ind) ) { top_L_pre_val = field->at(TL_pre_ind); }
         if ( mask.at(TR_pre_ind) ) { top_R_pre_val = field->at(TR_pre_ind); }
 
+        // If there's only one time, then 'future' is now
         if (Ntime > 1) {
             if ( mask.at(TL_fut_ind) ) { top_L_fut_val = field->at(TL_fut_ind); }
             if ( mask.at(TR_fut_ind) ) { top_R_fut_val = field->at(TR_fut_ind); }
@@ -149,8 +153,10 @@ double particles_interp_from_edges(
 
     // Interpolate in latitude
     //   For now, just say that things near the poles are 'broken'
-    if ( (top < 0) or (bottom < 0) ) {
-        interp_val = 0.;
+    if ( top == bottom ) {
+        interp_val = top_I_val; // top = bottom, so they're the same
+                                // this is the case where we're outside
+                                // of the lat bounds
     } else {
         lat_p = ( ref_lat - lat.at(bottom) ) / dlat;
         interp_val = (1. - lat_p) * bot_I_val  +  lat_p * top_I_val;

@@ -9,7 +9,8 @@
 #include "../netcdf_io.hpp"
 
 void write_regions(
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const std::vector<double> & latitude,
         const std::vector<double> & longitude,
         const std::vector<bool>   & mask,
@@ -19,11 +20,11 @@ void write_regions(
         const MPI_Comm comm
         ) {
 
-    const int Nlat   = myCounts.at(2);
-    const int Nlon   = myCounts.at(3);
+    const int Nlat = myCounts.at(2);
+    const int Nlon = myCounts.at(3);
 
-    const int Slat   = myStarts.at(2);
-    const int Slon   = myStarts.at(3);
+    const int Slat = myStarts.at(2);
+    const int Slon = myStarts.at(3);
 
     int wRank=-1, wSize=-1;
     MPI_Comm_rank( MPI_COMM_WORLD, &wRank );

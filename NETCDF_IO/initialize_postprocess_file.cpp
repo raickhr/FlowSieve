@@ -10,7 +10,8 @@ void initialize_postprocess_file(
         const dataset & source_data,
         const std::vector<double> & OkuboWeiss_dim_vals,
         const std::vector<std::string> & int_vars,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const double & filter_scale,
         const bool include_OkuboWeiss,
         const MPI_Comm comm
@@ -30,9 +31,10 @@ void initialize_postprocess_file(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_CLOBBER | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    //retval = nc_create_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+    retval = nc_create_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     retval = nc_put_att_double(ncid, NC_GLOBAL, "filter_scale", NC_DOUBLE, 1, &filter_scale);
@@ -87,6 +89,10 @@ void initialize_postprocess_file(
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
     }
 
+    std::string degrees_north = "degrees_north", degrees_east = "degrees_east";
+    nc_put_att_text( ncid, lat_varid, "units", degrees_north.size(), degrees_north.c_str() );
+    nc_put_att_text( ncid, lon_varid, "units", degrees_east.size(),  degrees_east.c_str() );
+
     if (not(constants::CARTESIAN)) {
         const double rad_to_degree = 180. / M_PI;
         retval = nc_put_att_double(ncid, lon_varid, "scale_factor", NC_DOUBLE, 1, &rad_to_degree);
@@ -120,6 +126,45 @@ void initialize_postprocess_file(
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
     }
 
+    // Coarsened-grid dimensions and variables
+    int coarse_lat_dimid, coarse_lon_dimid, coarse_lat_varid, coarse_lon_varid;
+    if ( source_data.coarse_map_lat.size() > 1 ) {
+
+        // latitude
+        retval = nc_def_dim(ncid, "coarse_latitude",  
+                                  source_data.coarse_map_lat.size(),
+                                  &coarse_lat_dimid);
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+        retval = nc_def_var(ncid, "coarse_latitude",  NC_DOUBLE,  1, 
+                                  &coarse_lat_dimid,   &coarse_lat_varid);
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+        count[0]  = source_data.coarse_map_lat.size();
+        retval = nc_put_vara_double(ncid, coarse_lat_varid,   start, count,
+                &(source_data.coarse_map_lat[0]));
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+
+        // longitude
+        retval = nc_def_dim(ncid, "coarse_longitude",  
+                                  source_data.coarse_map_lon.size(),
+                                  &coarse_lon_dimid);
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+        retval = nc_def_var(ncid, "coarse_longitude",  NC_DOUBLE,  1, 
+                                  &coarse_lon_dimid,   &coarse_lon_varid);
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+        count[0]  = source_data.coarse_map_lon.size();
+        retval = nc_put_vara_double(ncid, coarse_lon_varid,   start, count,
+                &(source_data.coarse_map_lon[0]));
+        if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+        nc_put_att_text( ncid, coarse_lat_varid, "units", degrees_north.size(), degrees_north.c_str() );
+        nc_put_att_text( ncid, coarse_lon_varid, "units", degrees_east.size(),  degrees_east.c_str() );
+    }
+
     // We're also going to store the region areas
     int area_dims[3];
     area_dims[0] = time_dimid;
@@ -138,7 +183,7 @@ void initialize_postprocess_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", buffer); }
+    if (wRank == 0) { fprintf(stdout, "\nOutput file (%s) initialized.\n", filename.c_str() ); }
     #endif
 
     if (wRank == 0) {
@@ -149,8 +194,8 @@ void initialize_postprocess_file(
         const char* dim_names[] = {"time", "depth", "region"};
         const int ndims = 3;
         for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-            add_var_to_file( int_vars.at(varInd)+"_area_average", dim_names, ndims, buffer);
-            add_var_to_file(int_vars.at(varInd)+"_area_std_dev", dim_names, ndims, buffer);
+            add_var_to_file( int_vars.at(varInd)+"_area_average", dim_names, ndims, filename );
+            add_var_to_file(int_vars.at(varInd)+"_area_std_dev", dim_names, ndims, filename );
         }
 
         // time averages
@@ -158,8 +203,19 @@ void initialize_postprocess_file(
             const char* dim_names_time_ave[] = {"depth", "latitude", "longitude"};
             const int ndims_time_ave = 3;
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_time_average", dim_names_time_ave, ndims_time_ave, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_time_std_dev", dim_names_time_ave, ndims_time_ave, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_time_average", dim_names_time_ave, ndims_time_ave, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_time_std_dev", dim_names_time_ave, ndims_time_ave, filename );
+            }
+        }
+
+        // coarsened maps
+        if ( source_data.coarse_map_lat.size() > 1 ) {
+            const char* dim_names_coarse_map[] = {"time", "depth", 
+                "coarse_latitude", "coarse_longitude"};
+            const int ndims_coarse_map = 4;
+            for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
+                add_var_to_file( int_vars.at(varInd)+"_coarsened_map", 
+                        dim_names_coarse_map, ndims_coarse_map, filename );
             }
         }
 
@@ -168,8 +224,9 @@ void initialize_postprocess_file(
             const char* dim_names_time_ave[] = {"time", "depth", "latitude"};
             const int ndims_time_ave = 3;
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_zonal_average", dim_names_time_ave, ndims_time_ave, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_zonal_std_dev", dim_names_time_ave, ndims_time_ave, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_zonal_average", dim_names_time_ave, ndims_time_ave, filename );
+                add_var_to_file( int_vars.at(varInd)+"_zonal_median", dim_names_time_ave, ndims_time_ave, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_zonal_std_dev", dim_names_time_ave, ndims_time_ave, filename );
             }
         }
 
@@ -177,10 +234,10 @@ void initialize_postprocess_file(
         if (include_OkuboWeiss) {
             const char* dim_names[] = {"time", "depth", "OkuboWeiss", "region"};
             const int ndims = 4;
-            add_var_to_file( "area_OkuboWeiss", dim_names, ndims, buffer);
+            add_var_to_file( "area_OkuboWeiss", dim_names, ndims, filename );
             for (size_t varInd = 0; varInd < int_vars.size(); ++varInd) {
-                add_var_to_file( int_vars.at(varInd)+"_OkuboWeiss_average", dim_names, ndims, buffer);
-                //add_var_to_file(int_vars.at(varInd)+"_OkuboWeiss_std_dev", dim_names, ndims, buffer);
+                add_var_to_file( int_vars.at(varInd)+"_OkuboWeiss_average", dim_names, ndims, filename );
+                //add_var_to_file(int_vars.at(varInd)+"_OkuboWeiss_std_dev", dim_names, ndims, filename );
             }
         }
     }

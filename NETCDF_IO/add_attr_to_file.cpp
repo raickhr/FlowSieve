@@ -5,9 +5,11 @@
 #include "../constants.hpp"
 
 void add_attr_to_file(
-        const char * varname,
+        const std::string varname,
+        //const char * varname,
         const double value,
-        const char * filename,
+        const std::string filename,
+        //const char * filename,
         const MPI_Comm comm
         ) {
 
@@ -19,12 +21,13 @@ void add_attr_to_file(
         // Open the NETCDF file
         int FLAG = NC_WRITE;
         int ncid=0, retval;
-        char buffer [50];
-        snprintf(buffer, 50, filename);
-        retval = nc_open(buffer, FLAG, &ncid);
+        //char buffer [50];
+        //snprintf(buffer, 50, filename);
+        //retval = nc_open(buffer, FLAG, &ncid);
+        retval = nc_open( filename.c_str(), FLAG, &ncid);
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
-        retval = nc_put_att_double(ncid, NC_GLOBAL, varname, NC_DOUBLE, 1, &value);
+        retval = nc_put_att_double(ncid, NC_GLOBAL, varname.c_str(), NC_DOUBLE, 1, &value);
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
         // Close the file
@@ -32,7 +35,8 @@ void add_attr_to_file(
         if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
         #if DEBUG >= 2
-        fprintf(stdout, "  - added %s to %s -\n", varname, buffer);
+        //fprintf(stdout, "  - added %s to %s -\n", varname, buffer);
+        fprintf(stdout, "  - added %s to %s -\n", varname.c_str(), filename.c_str() );
         #endif
     }
 

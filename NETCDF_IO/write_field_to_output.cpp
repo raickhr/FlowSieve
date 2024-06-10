@@ -4,6 +4,7 @@
 #include <mpi.h>
 #include <math.h>
 #include <cassert>
+#include <fenv.h>
 #include "../netcdf_io.hpp"
 #include "../constants.hpp"
 
@@ -33,11 +34,16 @@ void write_field_to_output(
     // Open the NETCDF file
     int FLAG = NC_NETCDF4 | NC_WRITE | NC_MPIIO;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename.c_str());
-    MPI_Barrier(comm);
-    retval = nc_open_par(buffer, FLAG, comm, MPI_INFO_NULL, &ncid);
+
+    // Some netcdf functions [in some netcdf versions] cause floating-point errors
+    //  so, we need to disable floating point exceptions when we try to open files.
+    fedisableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW );
+    retval = nc_open_par( filename.c_str(), FLAG, comm, MPI_INFO_NULL, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
+
+    // Now we can restore fp-exception handling, after clearing out any that were raised
+    feclearexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // erase whatever exceptions were raised
+    feenableexcept( FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW ); // re-enable exceptions
 
     // Get the variable ID for the field
     int field_varid;
@@ -97,7 +103,7 @@ void write_field_to_output(
 
     } else {
 
-        // Get the median value to let us use offsets
+        // Get the "middle" value to let us use offsets
         //      to do this, get min and max (first, MPI_local values)
         //      initalize with first element before looping over all values
         double  fmax_loc = 0,
@@ -252,19 +258,19 @@ void write_field_to_output(
 
 #if DEBUG>=2
                         if (num_dims > 2) {
-                            fprintf( stdout, "Loading chunk (%d, %d, %d) with starts (%zu, %zu, %zu) and counts (%zu, %zu, %zu) [%zu points total, with target %zu].\n", 
+                            fprintf( stdout, "Writing chunk (%d, %d, %d) with starts (%zu, %zu, %zu) and counts (%zu, %zu, %zu) [%zu points total, with target %zu].\n", 
                                     Ichunk_time, Ichunk_depth, Ichunk_dim3, 
                                     start_chunk[0], start_chunk[1], start_chunk[2],
                                     count_chunk[0], count_chunk[1], count_chunk[2], 
                                     pts_per_slice, target );
                         } else if (num_dims > 1) {
-                            fprintf( stdout, "Loading chunk (%d, %d) with starts (%zu, %zu) and counts (%zu, %zu) [%zu points total, with target %zu].\n", 
+                            fprintf( stdout, "Writing chunk (%d, %d) with starts (%zu, %zu) and counts (%zu, %zu) [%zu points total, with target %zu].\n", 
                                     Ichunk_time, Ichunk_depth,
                                     start_chunk[0], start_chunk[1],
                                     count_chunk[0], count_chunk[1],
                                     pts_per_slice, target );
                         } else {
-                            fprintf( stdout, "Loading chunk %d with start %zu and counts %zu [%zu points total, with target %zu].\n", 
+                            fprintf( stdout, "Writing chunk %d with start %zu and counts %zu [%zu points total, with target %zu].\n", 
                                     Ichunk_time,
                                     start_chunk[0],
                                     count_chunk[0],

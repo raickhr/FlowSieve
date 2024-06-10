@@ -9,7 +9,7 @@ void add_var_to_file(
         const std::string var_name,
         const char ** dim_list,
         const int num_dims,
-        const char * filename,
+        const std::string filename
         const int NC_datatype
         ) {
 
@@ -28,9 +28,9 @@ void add_var_to_file(
     // Open the NETCDF file
     int FLAG = NC_WRITE;
     int ncid=0, retval;
-    char buffer [50];
-    snprintf(buffer, 50, filename);
-    retval = nc_open(buffer, FLAG, &ncid);
+    //char buffer [50];
+    //snprintf(buffer, 50, filename);
+    retval = nc_open( filename.c_str(), FLAG, &ncid);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Extract dimension ids sizes
@@ -42,9 +42,10 @@ void add_var_to_file(
 
     // Declare the variable
     int var_id;
-    char varname [50];
-    snprintf(varname, 50, var_name.c_str());
-    retval = nc_def_var(ncid, varname, datatype, num_dims, dim_ids, &var_id);
+    //char varname [50];
+    //snprintf(varname, 50, var_name.c_str());
+    //retval = nc_def_var(ncid, varname, datatype, num_dims, dim_ids, &var_id);
+    retval = nc_def_var(ncid, var_name.c_str(), datatype, num_dims, dim_ids, &var_id);
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     // Add the fill value
@@ -58,44 +59,46 @@ void add_var_to_file(
     if (retval) { NC_ERR(retval, __LINE__, __FILE__); }
 
     #if DEBUG >= 2
-    fprintf(stdout, "  - added %s to %s -\n", varname, filename);
+    fprintf(stdout, "  - added %s to %s -\n", var_name.c_str(), filename.c_str());
     #endif
 
     ////
     //    Now add various meta-data statements to the file for clarity (if available)
     ////
     
-    // First, check 'type' (i.e. time average, spatial average, toroidal potential, etc)
+    // First, check 'type' (i.e. time average, spatial average, etc)
     std::string substring = var_name;
 
     const size_t    time_avg_index  = var_name.find("_time_average"),
                     Okubo_avg_index = var_name.find("_OkuboWeiss_average"),
                     area_avg_index  = var_name.find("_area_average"),
+                    coarse_map_index  = var_name.find("_coarsened_map"),
                     zonal_avg_index = var_name.find("_zonal_average");
     if ( time_avg_index != std::string::npos ) {
         nc_put_att_text( ncid, var_id, "variable_type", 
                          constants::time_average_description.size(), 
                          constants::time_average_description.c_str() );
         substring = var_name.substr( 0, time_avg_index );
-
     } else if ( Okubo_avg_index != std::string::npos ) {
         nc_put_att_text( ncid, var_id, "variable_type", 
                          constants::OkuboWeiss_average_description.size(), 
                          constants::OkuboWeiss_average_description.c_str() );
         substring = var_name.substr( 0, Okubo_avg_index );
-
     } else if ( area_avg_index != std::string::npos ) {
         nc_put_att_text( ncid, var_id, "variable_type", 
                          constants::spatial_average_description.size(),    
                          constants::spatial_average_description.c_str() );
         substring = var_name.substr( 0, area_avg_index );
-
     } else if ( zonal_avg_index != std::string::npos ) {
         nc_put_att_text( ncid, var_id, "variable_type", 
                          constants::zonal_average_description.size(),    
                          constants::zonal_average_description.c_str() );
         substring = var_name.substr( 0, zonal_avg_index );
-
+    } else if ( coarse_map_index != std::string::npos ) {
+        nc_put_att_text( ncid, var_id, "variable_type", 
+                         constants::coarsened_map_description.size(),    
+                         constants::coarsened_map_description.c_str() );
+        substring = var_name.substr( 0, coarse_map_index );
     }
 
     // Next, check if we have a long-form description and add that

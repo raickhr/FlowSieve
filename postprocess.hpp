@@ -19,7 +19,8 @@ void Apply_Postprocess_Routines(
         );
 
 void write_regions(
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const std::vector<double> & latitude,
         const std::vector<double> & longitude,
         const std::vector<bool> & mask,
@@ -50,9 +51,23 @@ void compute_region_avg_and_std(
         const MPI_Comm comm = MPI_COMM_WORLD
         );
 
+void compute_coarsened_map(
+        std::vector< std::vector< double > > & coarsened_maps,
+        const dataset & source_data,
+        const std::vector<const std::vector<double>*> & postprocess_fields,
+        const MPI_Comm comm = MPI_COMM_WORLD
+        );
+
 void compute_zonal_avg_and_std(
         std::vector< std::vector< double > > & zonal_averages,
         std::vector< std::vector< double > > & zonal_std_devs,
+        const dataset & source_data,
+        const std::vector<const std::vector<double>*> & postprocess_fields,
+        const MPI_Comm comm = MPI_COMM_WORLD
+        );
+
+void compute_zonal_median(
+        std::vector<std::vector<double>> & zonal_median,
         const dataset & source_data,
         const std::vector<const std::vector<double>*> & postprocess_fields,
         const MPI_Comm comm = MPI_COMM_WORLD
@@ -65,8 +80,9 @@ void compute_region_avg_and_std_OkuboWeiss(
         const dataset & source_data,
         const std::vector<const std::vector<double>*> & postprocess_fields,
         const std::vector<double> & OkuboWeiss,
-        const std::vector<double> OkuboWeiss_bounds,
-        const int NOkubo
+        const std::vector<double> & OkuboWeiss_bounds,
+        const int NOkubo,
+        const MPI_Comm comm = MPI_COMM_WORLD
         );
 
 void compute_time_avg_std(
@@ -83,7 +99,8 @@ void write_region_avg_and_std(
         const std::vector< std::vector< double > > & field_averages,
         const std::vector< std::vector< double > > & field_std_devs,
         const std::vector<std::string> & vars_to_process,
-        const char * filename,
+        const std::string & filename,
+        //const char * filename,
         const int Stime,
         const int Sdepth,
         const int Ntime,
@@ -92,11 +109,27 @@ void write_region_avg_and_std(
         const int num_fields
         );
 
+void write_coarsened_maps(
+        const std::vector< std::vector< double > > & coarsened_maps,
+        const std::vector<std::string> & vars_to_process,
+        //const char * filename,
+        const std::string & filename,
+        const int Stime,
+        const int Sdepth,
+        const int Ntime,
+        const int Ndepth,
+        const int coarse_Nlat,
+        const int coarse_Nlon,
+        const int num_fields
+        );
+
 void write_zonal_avg_and_std(
         const std::vector< std::vector< double > > & zonal_averages,
         const std::vector< std::vector< double > > & zonal_std_devs,
+        const std::vector< std::vector< double > > & zonal_medians,
         const std::vector<std::string> & vars_to_process,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const int Stime,
         const int Sdepth,
         const int Ntime,
@@ -110,7 +143,8 @@ void write_region_avg_and_std_OkuboWeiss(
         const std::vector< std::vector< double > > & field_std_devs_OW,
         const std::vector< double > & OkuboWeiss_areas,
         const std::vector<std::string> & vars_to_process,
-        const char * filename,
+        //const char * filename,
+        const std::string filename,
         const int Stime,
         const int Sdepth,
         const int Ntime,

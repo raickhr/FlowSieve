@@ -57,8 +57,9 @@ void apply_filter_at_point_for_quadratics(
         ) {
 
 
-    double  kern, area, kA_sum = 0, local_weight,
-            u_x_loc, u_y_loc, u_z_loc, vort_r_loc;
+
+    double  kern = 0, area = 0, kA_sum = 0, local_weight = 0,
+            u_x_loc = 0, u_y_loc = 0, u_z_loc = 0, vort_r_loc = 0;
     size_t index, kernel_index;
 
     const std::vector<double>   &latitude   = source_data.latitude,
@@ -79,6 +80,11 @@ void apply_filter_at_point_for_quadratics(
     uyuy_tmp = 0.;
     uyuz_tmp = 0.;
     uzuz_tmp = 0.;
+
+    vort_ux_tmp = 0.;
+    vort_uy_tmp = 0.;
+    vort_uz_tmp = 0.;
+
 
     int    curr_lon, curr_lat, LON_lb, LON_ub;
     double lat_at_curr;

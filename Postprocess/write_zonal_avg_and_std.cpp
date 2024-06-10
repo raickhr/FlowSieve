@@ -11,8 +11,10 @@
 void write_zonal_avg_and_std(
         const std::vector< std::vector< double > > & zonal_averages,
         const std::vector< std::vector< double > > & zonal_std_devs,
+        const std::vector< std::vector< double > > & zonal_medians,
         const std::vector<std::string> & vars_to_process,
-        const char * filename,
+        //const char * filename,
+        const std::string & filename,
         const int Stime,
         const int Sdepth,
         const int Ntime,
@@ -35,6 +37,9 @@ void write_zonal_avg_and_std(
     for ( int Ifield = 0; Ifield < num_fields; ++Ifield ) {
         write_field_to_output( 
                 zonal_averages.at(Ifield), vars_to_process.at(Ifield) + "_zonal_average", 
+                start, count, filename );
+        write_field_to_output( 
+                zonal_medians.at(Ifield), vars_to_process.at(Ifield) + "_zonal_median", 
                 start, count, filename );
         // To turn standard deviation outputs back on, also need to turn back on the calculations in compute_region_avg_and_std
     }
