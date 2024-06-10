@@ -563,8 +563,17 @@ int main(int argc, char *argv[]) {
                 MPI_Wtime() - clock_on, num_coastal_land, num_coastal_water);
 
         fprintf(stdout, "Building utility index arrays.\n");
+        clock_on = MPI_Wtime();
         // for utility, build an array of coastal water and land indices
         std::vector< size_t > coastal_water_indices( num_coastal_water, 0 );
+        index = 0;
+        for ( size_t II = 0; II < Npts_coarse; II++ ) {
+            if ( is_coastal_water[II] ) { 
+                coastal_water_indices[index] = II; 
+                index++;
+            }
+        }
+        /*
         size_t II = 0, count = 0;
         clock_on = MPI_Wtime();
         for ( index = 0; index < num_coastal_water; index++ ) {
@@ -577,6 +586,7 @@ int main(int argc, char *argv[]) {
             II++;
         }
         fprintf( stdout, " Non-threaded (inverted): %gs\n", MPI_Wtime() - clock_on );
+        */
 
         std::vector< size_t > coastal_land_indices( num_coastal_land, 0 );
         index = 0;
@@ -586,6 +596,7 @@ int main(int argc, char *argv[]) {
                 index++;
             }
         }
+        fprintf( stdout, "  took %gs\n", MPI_Wtime() - clock_on );
 
 
         // Count number of non-zero elements going into the Aij matrix
@@ -637,12 +648,15 @@ int main(int argc, char *argv[]) {
                         //if (inner_index < index) { continue; } // only store upper triangular part
 
                         //kern_val = (distance( lon_i, lat_i, lon_j, lat_j ) < interp_scale / 2 ) ? 1. : 0.;
-                        //kern_val = kernel( distance( lon_i, lat_i, lon_j, lat_j ), interp_scale );
-                        kern_val = 1.; // we hard-coded the search radius for the target values
+                        /*
+                        kern_val = kernel( distance( lon_i, lat_i, lon_j, lat_j ), interp_scale );
                         if ( kern_val > 1e-3 ) {
                             num_nonzero++;
                             nnz[i]++;
                         }
+                        */
+                        num_nonzero++;
+                        nnz[i]++;
                     }
                 }
             }
