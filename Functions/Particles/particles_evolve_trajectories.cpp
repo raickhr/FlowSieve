@@ -86,8 +86,8 @@ double get_at_point(
     particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
 
     double f0, f1;
-    f0 = particles_interp_from_edges( lat0, lon0, lat, lon, &var0, mask, left, right, bottom, top, 0, 0, 1);
-    f1 = particles_interp_from_edges( lat0, lon0, lat, lon, &var1, mask, left, right, bottom, top, 0, 0, 1);
+    f0 = particles_interp_from_edges( lat0, lon0, lat, lon, &var0, mask, left, right, bottom, top );
+    f1 = particles_interp_from_edges( lat0, lon0, lat, lon, &var1, mask, left, right, bottom, top );
 
     double t_p = ( t - t0 ) / (t1 - t0);
 
@@ -542,10 +542,10 @@ void particles_evolve_trajectories(
                 // Seed values for velocities (only used for dt)
                 particles_get_edges(left, right, bottom, top, lat0, lon0, lat, lon);
                 vel_lon_part = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lon_0, 
-                        mask, left, right, bottom, top, 0, 0, 1);
+                        mask, left, right, bottom, top );
 
                 vel_lat_part = particles_interp_from_edges( lat0, lon0, lat, lon, &vel_lat_0, 
-                        mask, left, right, bottom, top, 0, 0, 1);
+                        mask, left, right, bottom, top );
 
                 // Get initial values for tracked fields
                 if ( next_load_index == 1 ) {

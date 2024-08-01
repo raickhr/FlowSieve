@@ -54,10 +54,7 @@ double particles_interp_from_edges(
         const int left,
         const int right,
         const int bottom,
-        const int top,
-        const double time_p,
-        const int Itime,
-        const int Ntime
+        const int top
         );
 
 void particles_initial_positions(
