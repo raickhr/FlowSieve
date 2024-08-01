@@ -82,6 +82,8 @@ int main(int argc, char *argv[]) {
     const std::string &latlon_in_degrees  = input.getCmdOption("--is_degrees",   "true", asked_help);
 
     const std::string &compute_PEKE_conv  = input.getCmdOption("--do_PEKE_conversion", "false", asked_help);
+    const std::string &do_spectra_string  = input.getCmdOption("--output_spectra", "true", asked_help);
+    const bool do_spectra = ( do_spectra_string == "true" );
 
     const std::string   &Nprocs_in_time_string  = input.getCmdOption("--Nprocs_in_time",  "1", asked_help),
                         &Nprocs_in_depth_string = input.getCmdOption("--Nprocs_in_depth", "1", asked_help);
@@ -109,7 +111,7 @@ int main(int argc, char *argv[]) {
     //   e.g. --variables "rho salinity p" (names must match with input netcdf file)
     std::vector< std::string > vars_to_filter;
     input.getListofStrings( vars_to_filter, "--variables", asked_help );
-    const size_t Nvars = vars_to_filter.size();
+    size_t Nvars = vars_to_filter.size();
 
     // Also read in the filter scales from the commandline
     //   e.g. --filter_scales "10.e3 150.76e3 1000e3" (units are in metres)
@@ -212,15 +214,56 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    //
+    // Get some relevant indices for PE<->KE conversions
+    int rho_ind = -1, wo_ind = -1, rhowo_ind = -1, Lambda_g_ind = -1;
+    std::vector<double> dl_PEKE;
+    if ( compute_PEKE_conv == "true" ) {
+
+        for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
+            if (vars_to_filter.at(Ivar) == "rho"   ) { rho_ind = Ivar; }
+            if (vars_to_filter.at(Ivar) == "wo"    ) { wo_ind = Ivar; }
+            if (vars_to_filter.at(Ivar) == "rhowo" ) { rhowo_ind = Ivar; }
+        }
+
+        // If we don't have rho*wo as a variable, we need to add it
+        if ( rhowo_ind == -1 ) {
+            vars_to_filter.push_back("rhowo");
+            rhowo_ind = Nvars;
+            Nvars++;
+            source_data.variables.insert( std::pair< std::string, std::vector<double> >( "rhowo", std::vector<double>(Npts, 0.) ) );
+            #pragma omp parallel \
+            default (none) shared( source_data ) \
+            private( Ivar, index ) firstprivate( Nvars, Npts )
+            {
+                #pragma omp for collapse(1) schedule(static)
+                for ( index = 0; index < Npts; index++ ) {
+                    source_data.variables.at("rhowo").at(index) = source_data.variables.at("rho").at(index) * source_data.variables.at("wo").at(index);
+                }
+            }
+        }
+
+        if ( do_spectra ) { dl_PEKE.resize(Npts, 0.); }
+        Lambda_g_ind = Nvars;
+        Nvars++;
+        vars_to_filter.push_back("Lambda_g");
+        source_data.variables.insert( std::pair< std::string, std::vector<double> >( "Lambda_g", std::vector<double>(Npts,0.) ) );
+    }
+
+    // Set up storage of the coarsened fields
     #if DEBUG >= 1
     if (wRank == 0) { fprintf( stdout, "Setting up %'zu coarse fields.\n", Nvars ); fflush(stdout); }
     #endif
-    std::vector< std::vector<double> > coarse_fields(Nvars), dl_coarse_fields(Nvars), dll_coarse_fields(Nvars);
+    std::vector< std::vector<double> > coarse_fields(Nvars), 
+        dl_coarse_fields(do_spectra ? Nvars : 0), dll_coarse_fields(do_spectra ? Nvars : 0),
+        coarse_spectra(do_spectra ? Nvars : 0), coarse_spectral_slopes(do_spectra ? Nvars : 0);
     for (size_t field_ind = 0; field_ind < Nvars; field_ind++) {
         coarse_fields.at(field_ind).resize( Npts );
-        dl_coarse_fields.at(field_ind).resize( Npts );
-        dll_coarse_fields.at(field_ind).resize( Npts );
+        if ( do_spectra ) {
+            dl_coarse_fields.at(field_ind).resize( Npts );
+            dll_coarse_fields.at(field_ind).resize( Npts );
+            coarse_spectra.at(field_ind).resize(Npts);
+            coarse_spectral_slopes.at(field_ind).resize(Npts);
+        }
     }
 
     //
@@ -232,8 +275,8 @@ int main(int argc, char *argv[]) {
     double dl_kernel_val, dll_kernel_val;
     std::vector<double > filter_values_doubles, filter_dl_values_doubles, filter_dll_values_doubles, 
         local_kernel(Nlat * Nlon, 0.),
-        local_dl_kernel(Nlat * Nlon, 0.),
-        local_dll_kernel(Nlat * Nlon, 0.);
+        local_dl_kernel( do_spectra ? Nlat * Nlon : 0, 0.),
+        local_dll_kernel( do_spectra ? Nlat * Nlon : 0, 0.);
     std::vector<double*> filter_values_ptrs, filter_dl_values_ptrs, filter_dll_values_ptrs;
     std::vector<const std::vector<double>*> filter_fields;
     for (size_t field_ind = 0; field_ind < vars_to_filter.size(); field_ind++) {
@@ -244,86 +287,77 @@ int main(int argc, char *argv[]) {
     // Set up postprocessing fields
     std::vector<const std::vector<double>*> postprocess_fields;
     std::vector<std::string> postprocess_names;
-    int rho_ind = -1, wo_ind = -1;
     for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
         postprocess_fields.push_back( &coarse_fields.at(Ivar) );
         postprocess_names.push_back( vars_to_filter.at(Ivar) );
 
-        // first ell-derivative of field
-        postprocess_fields.push_back( &dl_coarse_fields.at(Ivar) );
-        postprocess_names.push_back( "dl_" + vars_to_filter.at(Ivar) );
+        if ( do_spectra ) {
+            // first ell-derivative of field
+            postprocess_fields.push_back( &dl_coarse_fields.at(Ivar) );
+            postprocess_names.push_back( "dl_" + vars_to_filter.at(Ivar) );
 
-        // second ell-derivative of field
-        postprocess_fields.push_back( &dll_coarse_fields.at(Ivar) );
-        postprocess_names.push_back( "dll_" + vars_to_filter.at(Ivar) );
+            // second ell-derivative of field
+            postprocess_fields.push_back( &dll_coarse_fields.at(Ivar) );
+            postprocess_names.push_back( "dll_" + vars_to_filter.at(Ivar) );
 
-        // Also get some relevant indices for PE<->KE conversions
-        if ( compute_PEKE_conv == "true" ) {
-            if (vars_to_filter.at(Ivar) == "rho") { rho_ind = Ivar; }
-            if (vars_to_filter.at(Ivar) == "wo" ) { wo_ind = Ivar; }
+            // power spectra
+            postprocess_fields.push_back( &coarse_spectra.at(Ivar) );
+            postprocess_names.push_back( vars_to_filter.at(Ivar) + "_spectrum" );
+
+            // spectra slopes
+            postprocess_fields.push_back( &coarse_spectral_slopes.at(Ivar) );
+            postprocess_names.push_back( vars_to_filter.at(Ivar) + "_spectral_slope" );
         }
     }
+
     std::vector<double> barrho_barwo(  0 ), dl_barrho_barwo;
     if ( compute_PEKE_conv == "true" ) {
+
         postprocess_names.push_back( "barrho_barwo" );
         barrho_barwo.resize( filter_fields[0]->size() );
         postprocess_fields.push_back( &barrho_barwo );
         
         // first ell derivative of bar(rho)*bar(wo)
-        postprocess_names.push_back( "dl_barrho_barwo" );
-        dl_barrho_barwo.resize( filter_fields[0]->size() );
-        postprocess_fields.push_back( &dl_barrho_barwo );
+        if ( do_spectra ) {
+            postprocess_names.push_back( "dl_barrho_barwo" );
+            dl_barrho_barwo.resize( filter_fields[0]->size() );
+            postprocess_fields.push_back( &dl_barrho_barwo );
+        }
+
         assert( rho_ind >= 0 );
         assert( wo_ind >= 0 );
     }
 
-    #if DEBUG >= 2
-    for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
-        size_t num_land = 0, num_fill = 0, num_missed = 0;
-        #pragma omp parallel \
-        default(none) shared( source_data, filter_fields, Ivar ) private( index ) \
-        reduction( + : num_land, num_fill, num_missed ) 
-        {
-            #pragma omp for collapse(1) schedule(static)
-            for (index = 0; index < Npts; index++) {
-                if ( not(source_data.mask.at(index)) ) {
-                    num_land++;
-                }
-                if ( filter_fields.at(Ivar)->at(index) == constants::fill_value ) {
-                    num_fill++;
-                    if ( source_data.mask.at(index) ) {
-                        num_missed++;
-                        source_data.mask.at(index) = false;
-                    }
-                }
-            }
-        }
-        fprintf( stdout, " Var %zu has %'zu masked values and %'zu fill-values. %'zu were missed.\n", Ivar, num_land, num_fill, num_missed );
-    }
-    #endif
+    // For printing progress
+    int perc_base = 5;
+    int thread_id, perc, perc_count=0;
 
     //
     //// Apply filtering
     //
     for (size_t ell_ind = 0; ell_ind < filter_scales.size(); ell_ind++) {
+        perc  = perc_base;
+        perc_count = 0;
 
         double scale = filter_scales.at(ell_ind);
 
         #if DEBUG >= 0
-        if (wRank == 0) { fprintf( stdout, "Filter scale %'g km.\n", scale / 1e3 ); }
+        if (wRank == 0) { fprintf( stdout, "\nFilter scale %'g km.\n", scale / 1e3 ); }
         #endif
 
         #pragma omp parallel \
         default(none) \
         shared( source_data, filter_fields, coarse_fields, dl_coarse_fields, dll_coarse_fields, \
-                scale, stdout, barrho_barwo, dl_barrho_barwo, rho_ind, wo_ind, compute_PEKE_conv ) \
+                scale, stdout, barrho_barwo, dl_barrho_barwo, compute_PEKE_conv, \
+                coarse_spectra, coarse_spectral_slopes, perc_base ) \
         private( filter_values_doubles, filter_dl_values_doubles, filter_dll_values_doubles, \
                  filter_values_ptrs, filter_dl_values_ptrs, filter_dll_values_ptrs, \
                  dl_kernel_val, dll_kernel_val, \
                  Itime, Idepth, Ilat, Ilon, Ivar, index, \
-                 LAT_lb, LAT_ub, null_vector ) \
-        firstprivate( local_kernel, local_dl_kernel, local_dll_kernel, \
-                      Nlon, Nlat, Ndepth, Ntime, Nvars )
+                 LAT_lb, LAT_ub, null_vector, thread_id ) \
+        firstprivate( local_kernel, local_dl_kernel, local_dll_kernel, do_spectra, \
+                      Nlon, Nlat, Ndepth, Ntime, Nvars, perc, perc_count, wRank, \
+                      rho_ind, wo_ind, rhowo_ind, Lambda_g_ind )
         {
 
             filter_values_doubles.clear();
@@ -331,21 +365,29 @@ int main(int argc, char *argv[]) {
             filter_dll_values_doubles.clear();
 
             filter_values_doubles.resize( Nvars );
-            filter_dl_values_doubles.resize( Nvars );
-            filter_dll_values_doubles.resize( Nvars );
+            if ( do_spectra ) {
+                filter_dl_values_doubles.resize( Nvars );
+                filter_dll_values_doubles.resize( Nvars );
+            }
 
             filter_values_ptrs.clear();
             filter_dl_values_ptrs.clear();
             filter_dll_values_ptrs.clear();
 
             filter_values_ptrs.resize( Nvars );
-            filter_dl_values_ptrs.resize( Nvars );
-            filter_dll_values_ptrs.resize( Nvars );
+            if ( do_spectra ) {
+                filter_dl_values_ptrs.resize( Nvars );
+                filter_dll_values_ptrs.resize( Nvars );
+            }
             for ( Ivar = 0; Ivar < Nvars; Ivar++ ) { 
                 filter_values_ptrs.at(Ivar) = &(filter_values_doubles.at(Ivar)); 
-                filter_dl_values_ptrs.at(Ivar) = &(filter_dl_values_doubles.at(Ivar)); 
-                filter_dll_values_ptrs.at(Ivar) = &(filter_dll_values_doubles.at(Ivar)); 
+                if ( do_spectra ) {
+                    filter_dl_values_ptrs.at(Ivar) = &(filter_dl_values_doubles.at(Ivar)); 
+                    filter_dll_values_ptrs.at(Ivar) = &(filter_dll_values_doubles.at(Ivar)); 
+                }
             }
+
+            thread_id = omp_get_thread_num();  // thread ID
 
             #pragma omp for collapse(1) schedule(dynamic)
             for (Ilat = 0; Ilat < Nlat; Ilat++) {
@@ -361,6 +403,19 @@ int main(int argc, char *argv[]) {
                 }
 
                 for (Ilon = 0; Ilon < Nlon; Ilon++) {
+
+                    #if DEBUG >= 0
+                    if ( (thread_id == 0) and (wRank == 0) ) {
+                        // Every perc_base percent, print a dot, but only the first thread
+                        while ( ((double)(Ilat*Nlon + Ilon + 1) / (Nlon*Nlat)) * 100 >= perc ) {
+                            perc_count++;
+                            if (perc_count % 5 == 0) { fprintf(stdout, "|"); }
+                            else                     { fprintf(stdout, "."); }
+                            fflush(stdout);
+                            perc += perc_base;
+                        }
+                    }
+                    #endif
 
                     if ( not( (constants::PERIODIC_X) and (constants::UNIFORM_LON_GRID) and (constants::FULL_LON_SPAN) ) ) {
                         // If we couldn't precompute the kernel earlier, then do it now
@@ -396,27 +451,58 @@ int main(int argc, char *argv[]) {
                                 for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
                                     coarse_fields.at(Ivar).at(index) = filter_values_doubles.at(Ivar);
 
-                                    // The ell-derivative of the filtered field
-                                    dl_coarse_fields.at(Ivar).at(index) = 
-                                        (   filter_dl_values_doubles.at(Ivar)
-                                          - filter_values_doubles.at(Ivar) ) 
-                                        * dl_kernel_val;
-                                    
-                                    // The second ell-derivative of the filtered field
-                                    dll_coarse_fields.at(Ivar).at(index) = 
-                                        (   filter_dll_values_doubles.at(Ivar)
-                                          - filter_values_doubles.at(Ivar) ) 
-                                        * dll_kernel_val
-                                        - 2 * (   filter_dl_values_doubles.at(Ivar)
-                                          - filter_values_doubles.at(Ivar) ) 
-                                        * pow(dl_kernel_val, 2);
+                                    if ( do_spectra ) {
+                                        // The ell-derivative of the filtered field
+                                        dl_coarse_fields.at(Ivar).at(index) = 
+                                            (   filter_dl_values_doubles.at(Ivar)
+                                              - filter_values_doubles.at(Ivar) ) 
+                                            * dl_kernel_val;
+                                        
+                                        // The second ell-derivative of the filtered field
+                                        dll_coarse_fields.at(Ivar).at(index) = 
+                                            (   filter_dll_values_doubles.at(Ivar)
+                                              - filter_values_doubles.at(Ivar) ) 
+                                            * dll_kernel_val
+                                            - 2 * (   filter_dl_values_doubles.at(Ivar)
+                                              - filter_values_doubles.at(Ivar) ) 
+                                            * pow(dl_kernel_val, 2);
+    
+                                        // Also compute the spectra and spectral slopes
+                                        coarse_spectra.at(Ivar).at(index) = -2 * pow(scale,2) * 
+                                            coarse_fields[Ivar][index] * dl_coarse_fields[Ivar][index];
+    
+                                        coarse_spectral_slopes.at(Ivar).at(index) = 
+                                            fabs( coarse_fields[Ivar][index] * dl_coarse_fields[Ivar][index] ) < 1e-20 ?
+                                            0 
+                                            :
+                                            -( 2 + scale * (
+                                                    coarse_fields[Ivar][index] * dll_coarse_fields[Ivar][index]
+                                                    + pow( dl_coarse_fields[Ivar][index], 2 )
+                                                    ) / ( coarse_fields[Ivar][index] * dl_coarse_fields[Ivar][index] )
+                                                );
+                                    }
                                 }
 
                                 if ( compute_PEKE_conv == "true" ) {
                                     barrho_barwo.at(index) = coarse_fields.at(rho_ind).at(index) * coarse_fields.at(wo_ind).at(index);
-                                    dl_barrho_barwo.at(index) = 
-                                        coarse_fields.at(rho_ind).at(index) * dl_coarse_fields.at(wo_ind).at(index);
-                                        + dl_coarse_fields.at(rho_ind).at(index) * coarse_fields.at(wo_ind).at(index);
+                                    if ( do_spectra ) {
+                                        dl_barrho_barwo.at(index) = 
+                                            coarse_fields.at(rho_ind).at(index) * dl_coarse_fields.at(wo_ind).at(index)
+                                            + dl_coarse_fields.at(rho_ind).at(index) * coarse_fields.at(wo_ind).at(index);
+                                    }
+                                    coarse_fields.at(Lambda_g_ind)[index] = 
+                                        - constants::g * ( coarse_fields.at(rhowo_ind).at(index)
+                                                           - barrho_barwo[index] 
+                                                );
+
+                                    /*
+                                    if ( do_spectra ) {
+                                        dl_PEKE[index] = -constants::g * (
+                                                dl_coarse_fields.at(rhowo_ind)[index] - dl_barrho_barwo[index]
+                                                );
+
+                                    }
+                                    */
                                 }
                             }
                         }
@@ -425,36 +511,13 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        #if DEBUG >= 2
-        for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
-            size_t num_land = 0, num_fill = 0, num_missed = 0;
-            #pragma omp parallel \
-            default(none) shared( source_data, coarse_fields, Ivar ) private( index ) \
-            reduction( + : num_land, num_fill, num_missed ) 
-            {
-                #pragma omp for collapse(1) schedule(static)
-                for (index = 0; index < Npts; index++) {
-                    if ( not(source_data.mask.at(index)) ) {
-                        num_land++;
-                    }
-                    if ( coarse_fields.at(Ivar).at(index) == constants::fill_value ) {
-                        num_fill++;
-                        if ( source_data.mask.at(index) ) {
-                            num_missed++;
-                        }
-                    }
-                }
-            }
-            fprintf( stdout, " Var %zu has %'zu masked values and %'zu fill-values. %'zu were missed.\n", Ivar, num_land, num_fill, num_missed );
-        }
-        #endif
-
         //
         //// Create output file
         //
         if (not(constants::NO_FULL_OUTPUTS)) {
             char fname [50];
             snprintf(fname, 50, "filter_%.6gkm.nc", scale / 1e3);
+
             initialize_output_file( source_data, vars_to_filter, fname, scale );
 
             const int ndims = 4;
@@ -481,24 +544,25 @@ int main(int argc, char *argv[]) {
         //
         //// on-line postprocessing, if desired
         //
-        #if DEBUG >= 2
-        size_t num_land = 0;
-        #pragma omp parallel \
-        default(none) shared( source_data ) private( index ) \
-        reduction( + : num_land ) 
-        {
-            #pragma omp for collapse(1) schedule(static)
-            for (index = 0; index < Npts; index++) {
-                if ( not(source_data.mask.at(index)) ) {
-                    num_land++;
-                }
-            }
-        }
-        fprintf( stdout, "Detected %'zu land points in the mask.\n", num_land );
-        #endif
-
         if (constants::APPLY_POSTPROCESS) {
             MPI_Barrier(MPI_COMM_WORLD);
+
+            if ( do_spectra ) {
+                // Need to weight slopes by the spectra
+                #pragma omp parallel \
+                default (none) \
+                shared( coarse_spectra, coarse_spectral_slopes ) \
+                private( Ivar, index ) \
+                firstprivate( Nvars, Npts )
+                {
+                    #pragma omp for collapse(2) schedule(static)
+                    for ( Ivar = 0; Ivar < Nvars; Ivar++ ) {
+                        for ( index = 0; index < Npts; index++ ) {
+                            coarse_spectral_slopes.at(Ivar).at(index) *= coarse_spectra.at(Ivar).at(index);
+                        }
+                    }
+                }
+            }
 
             #if DEBUG >= 1
             if (wRank == 0) { fprintf(stdout, "Beginning post-process routines\n"); }
