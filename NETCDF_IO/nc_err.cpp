@@ -9,7 +9,7 @@ void NC_ERR(
         const char* file_name
         ) {
 
-    #if DEBUG <= -2
+    #if DEBUG >= -2
     // Print error statement
     fprintf(stderr, "Error: [%s] at line %d in %s\n", nc_strerror(e), line_num, file_name);
 
